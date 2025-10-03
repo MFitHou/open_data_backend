@@ -487,6 +487,85 @@ export class FusekiService implements OnModuleInit {
     };
   }
 
+  // Tìm ATM gần
+  async searchATMsNearby(params: {
+    lon: number;
+    lat: number;
+    radiusKm: number;
+    limit?: number;
+  }) {
+    const { lon, lat, radiusKm } = params;
+    if (
+      lon === undefined || lat === undefined ||
+      Number.isNaN(lon) || Number.isNaN(lat)
+    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
+    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
+
+    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
+
+    const deltaLat = radiusKm / 111;
+    const radLat = lat * Math.PI / 180;
+    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
+    const minLat = lat - deltaLat;
+    const maxLat = lat + deltaLat;
+    const minLon = lon - deltaLon;
+    const maxLon = lon + deltaLon;
+
+    const query = `
+      PREFIX ex: <http://opendatafithou.org/poi/>
+      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      
+      SELECT ?poi ?amenity ?brand ?operator ?wkt ?lon ?lat
+      WHERE {
+        ?poi ex:amenity ?amenity .
+        FILTER(LCASE(STR(?amenity)) = "atm")
+        OPTIONAL { ?poi ex:brand ?brand . }
+        OPTIONAL { ?poi ex:operator ?operator . }
+        OPTIONAL {
+          ?poi geo:hasGeometry ?g .
+          ?g geo:asWKT ?wkt .
+          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
+          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
+          BIND(xsd:double(?lonStr) AS ?lon)
+          BIND(xsd:double(?latStr) AS ?lat)
+        }
+        FILTER(BOUND(?wkt))
+        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
+      }
+      LIMIT ${limit * 3}
+    `;
+
+    const rows = await this.runSelect(query);
+
+    const results = rows
+      .filter(r => r.lon && r.lat)
+      .map(r => {
+        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
+        return {
+          poi: r.poi,
+          amenity: r.amenity || 'atm',
+          brand: r.brand || null,
+          operator: r.operator || null,
+          wkt: r.wkt || null,
+          lon: parseFloat(r.lon),
+          lat: parseFloat(r.lat),
+          distanceKm: dKm,
+        };
+      })
+      .filter(r => r.distanceKm <= radiusKm)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, limit);
+
+    return {
+      center: { lon, lat },
+      radiusKm,
+      count: results.length,
+      items: results
+    };
+  }
+
   private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
     const R = 6371; // km
     const toRad = (deg: number) => deg * Math.PI / 180;

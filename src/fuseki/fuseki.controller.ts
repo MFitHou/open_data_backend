@@ -35,29 +35,27 @@ export class FusekiController {
     }
   }
 
-  @Get('atm/nearby')
-  async nearby(
+  @Get('atms/nearby')
+  async atmsNearby(
     @Query('lon') lon?: string,
     @Query('lat') lat?: string,
     @Query('radiusKm') radiusKm?: string,
-    @Query('amenities') amenities?: string,
     @Query('limit') limit?: string,
   ) {
     try {
       if (!lon || !lat || !radiusKm) {
         throw new BadRequestException('lon, lat, radiusKm bắt buộc');
       }
-      const data = await this.fusekiService.searchNearby({
+      const data = await this.fusekiService.searchATMsNearby({
         lon: parseFloat(lon),
         lat: parseFloat(lat),
         radiusKm: parseFloat(radiusKm),
-        amenities: amenities ? amenities.split(',').map(s => s.trim()).filter(Boolean) : undefined,
         limit: limit ? parseInt(limit, 10) : undefined,
       });
       return data;
     } catch (e: any) {
       throw new HttpException(
-        { message: 'Nearby query failed', error: e.message },
+        { message: 'ATMs nearby query failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }
