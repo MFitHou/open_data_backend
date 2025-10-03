@@ -67,15 +67,16 @@ export class FusekiService implements OnModuleInit {
       throw new BadRequestException('Query rỗng');
     }
 
-    const cleaned = query
-      .replace(/#[^\n\r]*/g, '')       
-      .trim();
+    console.log('Original query:', query);
+    const cleaned = query.trim();
 
     // Tìm từ khóa SELECT (không phân biệt hoa thường) sau các dòng PREFIX
     const hasSelect = /\bSELECT\b/i.test(cleaned);
     if (!hasSelect) {
       throw new BadRequestException('Chỉ hỗ trợ SELECT SPARQL');
     }
+
+    console.log('Cleaned query:', cleaned);
 
     return this.runSelect(cleaned);
  }
