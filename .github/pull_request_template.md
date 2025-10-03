@@ -1,0 +1,19 @@
+## 📋 Mô tả
+Hãy mô tả ngắn gọn về thay đổi trong PR này.
+
+## 🔨 Thay đổi chính
+- [ ] Fix bug ...
+- [ ] Thêm tính năng ...
+- [ ] Cập nhật tài liệu ...
+
+## 🧪 Cách kiểm thử
+Mô tả cách bạn đã test PR này:
+1. Chạy lệnh ...
+2. Kiểm tra màn hình ...
+3. Kết quả mong đợi ...
+
+## ✅ Checklist
+- [ ] Code đã chạy đúng.
+- [ ] Đã viết test (nếu có).
+- [ ] Đã cập nhật tài liệu (nếu cần).
+- [ ] Review xong trước khi merge.
