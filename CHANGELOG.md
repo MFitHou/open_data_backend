@@ -5,6 +5,15 @@ Tất cả các thay đổi đáng chú ý của dự án sẽ được ghi lạ
 Định dạng dựa trên [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 và dự án này tuân theo [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2025 - 10 -04
+
+### Đã sửa
+- Sửa lỗi gửi request tới Fuseki server
+- Cải thiện xử lý lỗi trong Fuseki service
+
+### Đã thay đổi
+- Cập nhật .env.example với cấu hình Fuseki đầy đủ hơn
+- Cải thiện API query bằng SPARQL từ client
 
 ## [0.1.0] - 2025-10-03
 
@@ -32,7 +41,13 @@ và dự án này tuân theo [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ## Ghi chú phiên bản
 
-### Phiên bản 0.1.0 (Phát hành đầu tiên)
+### Cập nhật gần đây (2025-10-04)
+- **Sửa lỗi kết nối Fuseki**: Cải thiện xử lý request tới Fuseki server
+- **API SPARQL nâng cao**: Tối ưu hóa query từ phía client
+- **Cấu hình môi trường**: Bổ sung thêm biến môi trường trong .env.example
+- **Xử lý lỗi**: Cải thiện error handling trong Fuseki service
+
+### Phiên bản 0.1.0 (Phát hành đầu tiên - 2025-10-03)
 - **Phiên bản ổn định đầu tiên** của Open Data Backend
 - Cung cấp **API cơ bản** cho xử lý dữ liệu mở
 - Tích hợp **Apache Jena Fuseki** để xử lý SPARQL queries
@@ -51,21 +66,32 @@ và dự án này tuân theo [Semantic Versioning](https://semver.org/spec/v2.0.
 ---
 ## Lộ trình phát triển
 
+### Đã hoàn thành gần đây
+- [x] Cải thiện API SPARQL queries
+- [x] Sửa lỗi kết nối Fuseki server
+- [x] Tối ưu hóa error handling
+- [x] Cập nhật cấu hình môi trường
+
 ### Tính năng dự kiến
 - [ ] Tích hợp cơ sở dữ liệu
 - [ ] Hệ thống xác thực
 - [ ] Tài liệu API với Swagger
-- [ ] Container hóa Docker
+- [ ] Container hóa Docker  
 - [ ] Thiết lập CI/CD pipeline
 - [ ] Giám sát hiệu suất
 - [ ] Triển khai caching
 - [ ] Giới hạn tốc độ truy cập
 
-### Phiên bản 0.1.2 (Sắp tới)
-- Nâng cao khả năng SPARQL query
-- Cải thiện RESTful API
-- Xử lý lỗi tốt hơn
-- Tài liệu API toàn diện
+### Phiên bản 0.1.1 (Sắp tới)
+- Unit tests toàn diện cho Fuseki module
+- Validation cho SPARQL queries
+- Logging system
+- API documentation cơ bản
+
+### Phiên bản 0.2.0 (Tương lai)
+- Tài liệu API đầy đủ với Swagger
+- Performance monitoring
+- Caching layer
 
 
 ---
