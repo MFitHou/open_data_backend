@@ -15,15 +15,21 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { FusekiModule } from './fuseki/fuseki.module';
-import { GeminiModule } from './gemini/gemini.module';
 
-@Module({
-  imports: [FusekiModule, GeminiModule],
-  controllers: [AppController],
-  providers: [AppService],
-})
-export class AppModule {}
+import { Controller, Get, HttpException, HttpStatus, Post, Body, BadRequestException, Query } from '@nestjs/common';
+import { GeminiService } from './gemini.service';
+
+@Controller('chat')
+export class GeminiController {
+    constructor(private readonly geminiService: GeminiService) {}
+
+    @Post('main')
+    async main(@Body('contents') contents: string) {
+        try {
+            const result = await this.geminiService.main(contents);
+            return result;
+        } catch (error) {
+            throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+}

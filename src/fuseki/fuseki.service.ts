@@ -29,17 +29,7 @@ export class FusekiService implements OnModuleInit {
   private readonly graphUri = "http://localhost:3030/graph/atm";
 
   async onModuleInit() {
-    try {
-      this.logger.log('Fuseki query endpoint: ' + this.queryEndpoint);
-      if (!this.queryEndpoint) {
-        this.logger.error('Thiếu FUSEKI_QUERY_ENDPOINT');
-        return;
-      }
-      // Kiểm tra graph list (chỉ log, không chặn)
-      await this.listGraphs();
-    } catch (e: any) {
-      this.logger.warn('Init fuseki skip: ' + e.message);
-    }
+    this.logger.log("FusekiService initialized");
   }
 
   async listGraphs() {
@@ -584,6 +574,90 @@ export class FusekiService implements OnModuleInit {
     };
   }
 
+  // Tìm drinking water gần
+  async searchDrinkingWaterNearby(params: {
+    lon: number;
+    lat: number;
+    radiusKm: number;
+    limit?: number;
+  }) {
+    const { lon, lat, radiusKm } = params;
+    if (
+      lon === undefined || lat === undefined ||
+      Number.isNaN(lon) || Number.isNaN(lat)
+    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
+    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
+
+    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
+
+    // Bounding box
+    const deltaLat = radiusKm / 111;
+    const radLat = lat * Math.PI / 180;
+    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
+    const minLat = lat - deltaLat;
+    const maxLat = lat + deltaLat;
+    const minLon = lon - deltaLon;
+    const maxLon = lon + deltaLon;
+
+    const query = `
+      PREFIX ex: <http://opendatafithou.org/poi/>
+      PREFIX geo1: <http://www.opendatafithou.net/ont/geosparql#>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      
+      SELECT ?poi ?amenity ?name ?bottle ?fee ?fountain ?wkt ?lon ?lat
+      WHERE {
+        ?poi ex:amenity ?amenity .
+        FILTER(LCASE(STR(?amenity)) = "drinking_water")
+        OPTIONAL { ?poi rdfs:label ?name . }
+        OPTIONAL { ?poi ex:bottle ?bottle . }
+        OPTIONAL { ?poi ex:fee ?fee . }
+        OPTIONAL { ?poi ex:fountain ?fountain . }
+        OPTIONAL {
+          ?poi geo1:hasGeometry ?g .
+          ?g geo1:asWKT ?wkt .
+          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
+          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
+          BIND(xsd:double(?lonStr) AS ?lon)
+          BIND(xsd:double(?latStr) AS ?lat)
+        }
+        FILTER(BOUND(?wkt))
+        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
+      }
+      LIMIT ${limit * 3}
+    `;
+
+    const rows = await this.runSelect(query);
+
+    const results = rows
+      .filter(r => r.lon && r.lat)
+      .map(r => {
+        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
+        return {
+          poi: r.poi,
+          amenity: r.amenity || 'drinking_water',
+          name: r.name || null,
+          bottle: r.bottle || null,
+          fee: r.fee || null,
+          fountain: r.fountain || null,
+          wkt: r.wkt || null,
+          lon: parseFloat(r.lon),
+          lat: parseFloat(r.lat),
+          distanceKm: dKm,
+        };
+      })
+      .filter(r => r.distanceKm <= radiusKm)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, limit);
+
+    return {
+      center: { lon, lat },
+      radiusKm,
+      count: results.length,
+      items: results
+    };
+  }
+
   private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
     const R = 6371; // km
     const toRad = (deg: number) => deg * Math.PI / 180;
@@ -606,10 +680,10 @@ export class FusekiService implements OnModuleInit {
     //Fuseki yêu cầu xác thực, 
     //nếu không đặt user/pass trên fuseki thì comment phần này
     const headers: Record<string, string> = { Accept: 'application/sparql-results+json' };
-    if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
-      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
-      headers['Authorization'] = `Basic ${basic}`;
-    }
+    // if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
+    //   const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+    //   headers['Authorization'] = `Basic ${basic}`;
+    // }
 
     const res = await fetch(url, {
       method: 'GET',

@@ -181,4 +181,30 @@ export class FusekiController {
       );
     }
   }
+
+  @Get('drinking-water/nearby')
+  async drinkingWaterNearby(
+    @Query('lon') lon?: string,
+    @Query('lat') lat?: string,
+    @Query('radiusKm') radiusKm?: string,
+    @Query('limit') limit?: string,
+  ) {
+    try {
+      if (!lon || !lat || !radiusKm) {
+        throw new BadRequestException('lon, lat, radiusKm bắt buộc');
+      }
+      const data = await this.fusekiService.searchDrinkingWaterNearby({
+        lon: parseFloat(lon),
+        lat: parseFloat(lat),
+        radiusKm: parseFloat(radiusKm),
+        limit: limit ? parseInt(limit, 10) : undefined,
+      });
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Drinking water nearby query failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
 }

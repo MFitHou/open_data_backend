@@ -16,14 +16,14 @@
  */
 
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { FusekiModule } from './fuseki/fuseki.module';
-import { GeminiModule } from './gemini/gemini.module';
+import { ConfigModule } from '@nestjs/config';
+import { GeminiService } from './gemini.service';
+import { GeminiController } from './gemini.controller';
 
 @Module({
-  imports: [FusekiModule, GeminiModule],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  providers: [GeminiService],
+  controllers: [GeminiController],
+  exports: [GeminiService],
 })
-export class AppModule {}
+export class GeminiModule {}
