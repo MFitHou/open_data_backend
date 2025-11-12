@@ -32,7 +32,7 @@ export class GeminiService implements OnModuleInit {
         
         this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         this.model = this.genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp",
+            model: "gemini-2.5-flash",
             systemInstruction: `You are a location classification assistant. 
                 Only respond to questions about locations in Vietnam, including tourist destinations and public facilities.
                 If the question is not appropriate, reply: "Inappropriate question."`
@@ -63,7 +63,7 @@ export class GeminiService implements OnModuleInit {
 
         try {
             const model = this.genAI.getGenerativeModel({
-                model: "gemini-2.0-flash-exp",
+                model: "gemini-2.5-flash",
                 systemInstruction: `You are a location classification assistant. 
                 Only respond to questions about locations in Vietnam, including tourist destinations and public facilities.
                 If the question is not appropriate, reply: "Inappropriate question."`,
