@@ -680,10 +680,10 @@ export class FusekiService implements OnModuleInit {
     //Fuseki yêu cầu xác thực, 
     //nếu không đặt user/pass trên fuseki thì comment phần này
     const headers: Record<string, string> = { Accept: 'application/sparql-results+json' };
-    // if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
-    //   const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
-    //   headers['Authorization'] = `Basic ${basic}`;
-    // }
+    if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
+      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+      headers['Authorization'] = `Basic ${basic}`;
+    }
 
     const res = await fetch(url, {
       method: 'GET',
