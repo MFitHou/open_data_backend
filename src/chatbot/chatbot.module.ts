@@ -16,14 +16,14 @@
  */
 
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { FusekiModule } from './fuseki/fuseki.module';
-import { ChatbotModule } from './chatbot/chatbot.module';
+import { ConfigModule } from '@nestjs/config';
+import { ChatbotService } from './chatbot.service';
+import { ChatbotController } from './chatbot.controller';
 
 @Module({
-  imports: [FusekiModule, ChatbotModule],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  providers: [ChatbotService],
+  controllers: [ChatbotController],
+  exports: [ChatbotService],
 })
-export class AppModule {}
+export class ChatbotModule {}
