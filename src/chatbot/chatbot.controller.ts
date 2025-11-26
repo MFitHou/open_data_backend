@@ -22,10 +22,21 @@ import { ChatbotService } from './chatbot.service';
 @Controller('chat')
 export class ChatbotController {
     constructor(private readonly chatbotService: ChatbotService) {}
+
     @Post('main')
     async main(@Body('contents') contents: string) {
         try {
             const result = await this.chatbotService.main(contents);
+            return result;
+        } catch (error) {
+            throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post('test')
+    async test(@Body('contents') contents: string) {
+         try {
+            const result = await this.chatbotService.test(contents);
             return result;
         } catch (error) {
             throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
