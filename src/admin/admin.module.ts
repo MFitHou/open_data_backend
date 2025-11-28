@@ -16,17 +16,15 @@
  */
 
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { FusekiModule } from './fuseki/fuseki.module';
-import { ChatbotModule } from './chatbot/chatbot.module';
-import { WikidataModule } from './wikidata/wikidata.module';
-import { OverpassModule } from './overpass/overpass.module';
-import { AdminModule } from './admin/admin.module';
+import { ConfigModule } from '@nestjs/config';
+import { AdminService } from './admin.service';
+import { AdminController } from './admin.controller';
+import { FusekiModule } from '../fuseki/fuseki.module';
 
 @Module({
-  imports: [FusekiModule, ChatbotModule, WikidataModule, OverpassModule, AdminModule],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), FusekiModule],
+  providers: [AdminService],
+  controllers: [AdminController],
+  exports: [AdminService],
 })
-export class AppModule {}
+export class AdminModule {}
