@@ -16,6 +16,7 @@
  */
 
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { FusekiModule } from './fuseki/fuseki.module';
@@ -25,7 +26,14 @@ import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [FusekiModule, ChatbotModule, WikidataModule, OverpassModule, AdminModule],
+  imports: [
+    ScheduleModule.forRoot(), // Enable cron jobs
+    FusekiModule,
+    ChatbotModule,
+    WikidataModule,
+    OverpassModule,
+    AdminModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

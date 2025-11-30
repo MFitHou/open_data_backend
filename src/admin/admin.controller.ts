@@ -17,11 +17,15 @@
 
 import { Controller, Get, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { IotSimulatorService } from './iot-simulator.service';
 import { CreatePoiDto } from './dto/CreatePoiDto';
 
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly iotSimulatorService: IotSimulatorService,
+  ) {}
 
   /**
    * GET /admin/stats
@@ -82,6 +86,34 @@ export class AdminController {
       success: true,
       message: 'Admin module is running',
       timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * GET /admin/iot/traffic
+   * Lấy dữ liệu traffic simulation cho map (clean format)
+   */
+  @Get('iot/traffic')
+  async getTrafficData() {
+    const data = await this.adminService.getTrafficData();
+    return {
+      success: true,
+      count: data.length,
+      data,
+    };
+  }
+
+  /**
+   * GET /admin/iot/flood
+   * Lấy dữ liệu flood simulation cho map (clean format)
+   */
+  @Get('iot/flood')
+  async getFloodData() {
+    const data = await this.adminService.getFloodData();
+    return {
+      success: true,
+      count: data.length,
+      data,
     };
   }
 }
