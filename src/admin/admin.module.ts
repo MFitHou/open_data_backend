@@ -20,11 +20,12 @@ import { ConfigModule } from '@nestjs/config';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { FusekiModule } from '../fuseki/fuseki.module';
+import { IotSimulatorService } from './iot-simulator.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), FusekiModule],
-  providers: [AdminService],
+  providers: [AdminService, IotSimulatorService],
   controllers: [AdminController],
-  exports: [AdminService],
+  exports: [AdminService, IotSimulatorService],
 })
 export class AdminModule {}

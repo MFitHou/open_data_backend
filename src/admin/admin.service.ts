@@ -217,4 +217,108 @@ export class AdminService {
       throw error;
     }
   }
+
+  /**
+   * Lấy dữ liệu traffic IoT cho map
+   * Return empty array nếu graph chưa tồn tại hoặc rỗng
+   */
+  async getTrafficData() {
+    try {
+      this.logger.log('Fetching traffic IoT data');
+
+      const query = `
+PREFIX sosa: <http://www.w3.org/ns/sosa/>
+PREFIX ex: <http://opendatafithou.org/sensor/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?sensor ?sensorLabel ?lat ?lon ?intensity ?congested
+WHERE {
+  GRAPH <http://opendatafithou.org/graph/iot-traffic> {
+    ?obs a sosa:Observation ;
+      sosa:madeBySensor ?sensor ;
+      sosa:hasSimpleResult ?intensity ;
+      ex:congested ?congested ;
+      ex:sensorType "traffic_camera" .
+      
+    ?sensor rdfs:label ?sensorLabel ;
+      geo:lat ?lat ;
+      geo:long ?lon .
+  }
+}
+      `.trim();
+
+      const results = await this.fusekiService.executeSelect(query);
+
+      // Transform kết quả thành format sạch cho frontend
+      const trafficData = results.map((row) => ({
+        id: row.sensor?.split('/').pop() || 'unknown',
+        name: row.sensorLabel || 'Unknown Sensor',
+        lat: parseFloat(row.lat),
+        lon: parseFloat(row.lon),
+        intensity: parseInt(row.intensity, 10),
+        congested: row.congested === 'true',
+      }));
+
+      this.logger.log(`Traffic data fetched: ${trafficData.length} sensors`);
+      return trafficData;
+    } catch (error) {
+      // Return empty array thay vì throw error (graph có thể chưa tồn tại)
+      this.logger.warn('Traffic data fetch returned empty (graph may not exist yet)');
+      return [];
+    }
+  }
+
+  /**
+   * Lấy dữ liệu flood IoT cho map
+   * Return empty array nếu graph chưa tồn tại hoặc rỗng
+   */
+  async getFloodData() {
+    try {
+      this.logger.log('Fetching flood IoT data');
+
+      const query = `
+PREFIX sosa: <http://www.w3.org/ns/sosa/>
+PREFIX ex: <http://opendatafithou.org/sensor/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?sensor ?sensorLabel ?lat ?lon ?waterLevel ?alertLevel
+WHERE {
+  GRAPH <http://opendatafithou.org/graph/iot-flood> {
+    ?obs a sosa:Observation ;
+      sosa:madeBySensor ?sensor ;
+      sosa:hasSimpleResult ?waterLevel ;
+      ex:alertLevel ?alertLevel ;
+      ex:sensorType "flood_sensor" .
+      
+    ?sensor rdfs:label ?sensorLabel ;
+      geo:lat ?lat ;
+      geo:long ?lon .
+  }
+}
+      `.trim();
+
+      const results = await this.fusekiService.executeSelect(query);
+
+      // Transform kết quả thành format sạch cho frontend
+      const floodData = results.map((row) => ({
+        id: row.sensor?.split('/').pop() || 'unknown',
+        name: row.sensorLabel || 'Unknown Sensor',
+        lat: parseFloat(row.lat),
+        lon: parseFloat(row.lon),
+        waterLevel: parseInt(row.waterLevel, 10),
+        alertLevel: row.alertLevel || 'normal',
+      }));
+
+      this.logger.log(`Flood data fetched: ${floodData.length} sensors`);
+      return floodData;
+    } catch (error) {
+      // Return empty array thay vì throw error (graph có thể chưa tồn tại)
+      this.logger.warn('Flood data fetch returned empty (graph may not exist yet)');
+      return [];
+    }
+  }
 }

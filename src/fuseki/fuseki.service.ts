@@ -26,6 +26,10 @@ export class FusekiService implements OnModuleInit {
     process.env.FUSEKI_QUERY_ENDPOINT ||
     `${process.env.FUSEKI_BASE_URL}/${process.env.FUSEKI_DATASET}/sparql`;
 
+  private readonly updateEndpoint =
+    process.env.FUSEKI_UPDATE_ENDPOINT ||
+    `${process.env.FUSEKI_BASE_URL}/${process.env.FUSEKI_DATASET}/update`;
+
   private readonly graphUri = "http://localhost:3030/graph/atm";
 
   async onModuleInit() {
@@ -594,6 +598,40 @@ export class FusekiService implements OnModuleInit {
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
       Math.sin(dLon / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  /**
+   * Thực thi SPARQL UPDATE query (INSERT, DELETE, etc.)
+   * @param updateQuery - SPARQL UPDATE query string
+   */
+  async update(updateQuery: string): Promise<void> {
+    if (!this.updateEndpoint) {
+      throw new Error('Update endpoint not configured');
+    }
+
+    this.logger.debug('SPARQL UPDATE: ' + updateQuery.substring(0, 200));
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/sparql-update',
+    };
+
+    if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
+      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+      headers['Authorization'] = `Basic ${basic}`;
+    }
+
+    const res = await fetch(this.updateEndpoint, {
+      method: 'POST',
+      headers,
+      body: updateQuery,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`SPARQL UPDATE error ${res.status}: ${text}`);
+    }
+
+    this.logger.debug('SPARQL UPDATE success');
   }
 
   private async runSelect(query: string) {
