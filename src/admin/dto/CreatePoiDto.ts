@@ -3,12 +3,11 @@
  */
 
 export class CreatePoiDto {
-  type: string; // atm, hospital, toilet, bus-stop
   name: string;
-  latitude: number;
-  longitude: number;
+  type: string; // atm, hospital, toilet, bus-stop
+  lat: number;
+  lon: number;
   address?: string;
-  description?: string;
 }
 
 export class StatsResponseDto {

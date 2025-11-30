@@ -25,6 +25,132 @@ export class AdminService {
   constructor(private readonly fusekiService: FusekiService) {}
 
   /**
+   * Cache schema của mỗi graph để tránh query lại nhiều lần
+   */
+  private schemaCache: Map<string, string[]> = new Map();
+
+  /**
+   * Introspection: Tự động phát hiện các thuộc tính có trong graph
+   * @param graphUrl - URL của Named Graph
+   * @returns Danh sách các predicates (thuộc tính) có thực tế trong data
+   */
+  private async introspectGraphSchema(graphUrl: string): Promise<string[]> {
+    // Kiểm tra cache
+    if (this.schemaCache.has(graphUrl)) {
+      return this.schemaCache.get(graphUrl)!;
+    }
+
+    try {
+      // Query để lấy tất cả predicates có trong graph
+      const query = `
+        PREFIX ex: <http://opendatafithou.org/poi/>
+        PREFIX geo1: <http://www.opendatafithou.net/ont/geosparql#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX schema: <http://schema.org/>
+        
+        SELECT DISTINCT ?predicate
+        WHERE {
+          GRAPH <${graphUrl}> {
+            ?s ?predicate ?o .
+            # Loại bỏ các predicates hệ thống
+            FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)
+            FILTER(!STRSTARTS(STR(?predicate), "http://www.w3.org/2000/01/rdf-schema#"))
+            FILTER(?predicate != geo1:hasGeometry)
+          }
+        }
+        LIMIT 100
+      `.trim();
+
+      const results = await this.fusekiService.executeSelect(query);
+      const predicates = results.map((row) => row.predicate).filter(Boolean);
+
+      // Lưu vào cache
+      this.schemaCache.set(graphUrl, predicates);
+      this.logger.log(`Graph ${graphUrl} has ${predicates.length} properties`);
+
+      return predicates;
+    } catch (error) {
+      this.logger.error(`Failed to introspect schema for ${graphUrl}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Graph mapping
+   */
+  private getGraphMap(): Record<string, string> {
+    return {
+      school: 'http://160.250.5.179:3030/graph/school',
+      'bus-stop': 'http://160.250.5.179:3030/graph/bus-stop',
+      'play-ground': 'http://160.250.5.179:3030/graph/play-ground',
+      'drinking-water': 'http://160.250.5.179:3030/graph/drinking-water',
+      toilet: 'http://160.250.5.179:3030/graph/toilet',
+    };
+  }
+
+  /**
+   * Lấy schema (cấu trúc thuộc tính) của một loại POI
+   * Trả về danh sách các thuộc tính có thực tế trong data
+   */
+  async getPoiSchema(type: string) {
+    try {
+      const graphMap = this.getGraphMap();
+      const graphUrl = graphMap[type.toLowerCase()];
+
+      if (!graphUrl) {
+        throw new BadRequestException(
+          `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}`
+        );
+      }
+
+      // Lấy schema từ introspection
+      const predicates = await this.introspectGraphSchema(graphUrl);
+
+      // Map predicates thành field names thân thiện
+      const fields = predicates.map((predicate) => {
+        const parts = predicate.split(/[/#]/);
+        const fieldName = parts[parts.length - 1];
+        return {
+          key: fieldName,
+          predicate,
+          label: this.generateFieldLabel(fieldName),
+        };
+      });
+
+      // Thêm các field bắt buộc nếu chưa có
+      const essentialFields = ['name', 'coordinates', 'address'];
+      essentialFields.forEach((key) => {
+        if (!fields.find((f) => f.key === key || f.key.includes(key))) {
+          fields.unshift({ key, predicate: '', label: this.generateFieldLabel(key) });
+        }
+      });
+
+      return {
+        success: true,
+        type,
+        graphUrl,
+        fields,
+        count: fields.length,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching POI schema:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate field label từ field name
+   */
+  private generateFieldLabel(fieldName: string): string {
+    // Convert camelCase/snake_case to Title Case
+    return fieldName
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/_/g, ' ')
+      .replace(/^./, (str) => str.toUpperCase())
+      .trim();
+  }
+
+  /**
    * Lấy thống kê tổng quan cho dashboard
    * Đếm số lượng các loại POI trong database
    */
@@ -144,78 +270,140 @@ export class AdminService {
         throw new BadRequestException('Missing required field: name');
       }
 
-      if (!data.latitude || !data.longitude) {
-        throw new BadRequestException('Missing required fields: latitude, longitude');
+      if (data.lat === undefined || data.lon === undefined) {
+        throw new BadRequestException('Missing required fields: lat, lon');
       }
 
-      // Tạo URI cho POI mới
-      const poiId = `poi_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const poiUri = `http://opendatafithou.org/poi/${poiId}`;
+      // Generate UUID v4
+      const uuid = this.generateUUID();
+      
+      // Tạo URI theo format yêu cầu: urn:ngsi-ld:PointOfInterest:Hanoi:{type}:{uuid}
+      const typeNormalized = data.type.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const poiUri = `urn:ngsi-ld:PointOfInterest:Hanoi:${typeNormalized}:${uuid}`;
 
-      // Xác định graph dựa trên type
+      // Xác định graph và ontology mapping dựa trên type
       let graphUri = 'http://localhost:3030/graph/atm'; // Default
-      let poiClass = 'ex:ATM';
+      let schemaType = 'schema:FinancialService';
 
       switch (data.type.toLowerCase()) {
         case 'hospital':
           graphUri = 'http://localhost:3030/graph/hospital';
-          poiClass = 'ex:Hospital';
+          schemaType = 'schema:MedicalClinic';
           break;
         case 'toilet':
+        case 'toilets':
           graphUri = 'http://localhost:3030/graph/toilet';
-          poiClass = 'ex:Toilet';
+          schemaType = 'schema:PublicToilet';
           break;
         case 'bus-stop':
         case 'bus_stop':
+        case 'busstop':
           graphUri = 'http://localhost:3030/graph/bus_stop';
-          poiClass = 'ex:BusStop';
+          schemaType = 'schema:BusStation';
           break;
         case 'atm':
         default:
           graphUri = 'http://localhost:3030/graph/atm';
-          poiClass = 'ex:ATM';
+          schemaType = 'schema:FinancialService';
       }
 
-      // SPARQL INSERT query
+      // Escape chuỗi để tránh SPARQL injection
+      const escapedName = this.escapeSparqlString(data.name);
+      const escapedAddress = data.address ? this.escapeSparqlString(data.address) : null;
+
+      // SPARQL INSERT query với ontology mapping đầy đủ
       const insertQuery = `
-        PREFIX ex: <http://opendatafithou.org/poi/>
-        PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX fiware: <https://uri.fiware.org/ns/data-models#>
+        PREFIX schema: <http://schema.org/>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         
         INSERT DATA {
           GRAPH <${graphUri}> {
-            <${poiUri}> a ${poiClass} ;
-              rdfs:label "${data.name}"@vi ;
-              geo:lat "${data.latitude}"^^xsd:decimal ;
-              geo:long "${data.longitude}"^^xsd:decimal ;
-              ${data.address ? `ex:address "${data.address}"@vi ;` : ''}
-              ${data.description ? `rdfs:comment "${data.description}"@vi ;` : ''}
-              ex:createdAt "${new Date().toISOString()}"^^xsd:dateTime .
+            <${poiUri}> a fiware:PointOfInterest , ${schemaType} ;
+              schema:name "${escapedName}" ;
+              geo:lat "${data.lat}"^^xsd:decimal ;
+              geo:long "${data.lon}"^^xsd:decimal ${escapedAddress ? `;
+              schema:address "${escapedAddress}"` : ''} .
           }
         }
       `;
 
       // Thực thi INSERT query
-      // Note: FusekiService cần có method executeUpdate cho INSERT/DELETE
-      // Tạm thời sử dụng executeSelect và log warning
-      this.logger.warn('INSERT query prepared but not executed (need executeUpdate method):');
-      this.logger.debug(insertQuery);
+      await this.fusekiService.update(insertQuery);
 
-      // TODO: Implement executeUpdate trong FusekiService
-      // await this.fusekiService.executeUpdate(insertQuery);
+      this.logger.log(`POI created successfully: ${poiUri}`);
 
       return {
         success: true,
-        message: 'POI creation prepared (pending executeUpdate implementation)',
-        poiId,
-        poiUri,
-        query: insertQuery,
+        message: 'POI created successfully',
+        id: poiUri,
+        uuid,
+        graphUri,
       };
     } catch (error) {
       this.logger.error('Error creating POI:', error);
       throw error;
     }
+  }
+
+  /**
+   * Xóa POI khỏi database
+   * Sử dụng SPARQL DELETE để xóa tất cả triples liên quan đến POI
+   */
+  async deletePoi(id: string) {
+    try {
+      this.logger.log(`Deleting POI: ${id}`);
+
+      // Validate ID
+      if (!id || !id.trim()) {
+        throw new BadRequestException('Missing required field: id');
+      }
+
+      // SPARQL DELETE query để xóa tất cả triples có subject là POI này
+      const deleteQuery = `
+        DELETE WHERE {
+          <${id}> ?p ?o .
+        }
+      `;
+
+      // Thực thi DELETE query
+      await this.fusekiService.update(deleteQuery);
+
+      this.logger.log(`POI deleted successfully: ${id}`);
+
+      return {
+        success: true,
+        message: 'POI deleted successfully',
+        id,
+      };
+    } catch (error) {
+      this.logger.error('Error deleting POI:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate UUID v4
+   */
+  private generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * Escape chuỗi cho SPARQL để tránh injection
+   */
+  private escapeSparqlString(str: string): string {
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
   }
 
   /**
@@ -320,5 +508,243 @@ WHERE {
       this.logger.warn('Flood data fetch returned empty (graph may not exist yet)');
       return [];
     }
+  }
+
+  /**
+   * Lấy danh sách POIs từ Named Graphs với filter theo type
+   * @param type - Loại POI (school, bus-stop, play-ground, drinking-water, toilet, all)
+   * @param page - Trang hiện tại (mặc định: 1)
+   * @param limit - Số lượng items mỗi trang (mặc định: 10)
+   */
+  async getPois(type?: string, page: number = 1, limit: number = 10) {
+    try {
+      this.logger.log(`Fetching POIs: type=${type}, page=${page}, limit=${limit}`);
+
+      // Validate pagination params
+      const validPage = Math.max(1, page);
+      const validLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+
+      // Map type to graph URL
+      const graphMap = this.getGraphMap();
+
+      // Determine which graphs to query
+      let graphUrls: string[] = [];
+      
+      if (!type || type === 'all') {
+        // Query all graphs
+        graphUrls = Object.values(graphMap);
+      } else {
+        // Query specific graph
+        const graphUrl = graphMap[type.toLowerCase()];
+        if (!graphUrl) {
+          throw new BadRequestException(
+            `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}, all`
+          );
+        }
+        graphUrls = [graphUrl];
+      }
+
+      // Fetch data from all selected graphs
+      const allPois: any[] = [];
+
+      for (const graphUrl of graphUrls) {
+        try {
+          const pois = await this.fetchPoisFromGraph(graphUrl, validLimit * 2);
+          allPois.push(...pois);
+        } catch (err) {
+          this.logger.warn(`Failed to fetch from graph ${graphUrl}: ${err.message}`);
+          // Continue with other graphs
+        }
+      }
+
+      // Sort by name and apply pagination
+      const sortedPois = allPois.sort((a, b) => a.name.localeCompare(b.name));
+      const startIndex = (validPage - 1) * validLimit;
+      const endIndex = startIndex + validLimit;
+      const paginatedPois = sortedPois.slice(startIndex, endIndex);
+
+      return {
+        success: true,
+        data: paginatedPois,
+        pagination: {
+          page: validPage,
+          limit: validLimit,
+          total: sortedPois.length,
+          totalPages: Math.ceil(sortedPois.length / validLimit),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error fetching POIs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch POIs từ một Named Graph cụ thể
+   * Sử dụng introspection để query động chỉ những thuộc tính có trong data
+   * @param graphUrl - URL của Named Graph
+   * @param limit - Số lượng tối đa
+   */
+  private async fetchPoisFromGraph(graphUrl: string, limit: number = 20): Promise<any[]> {
+    try {
+      // Lấy schema (danh sách predicates) có trong graph
+      const predicates = await this.introspectGraphSchema(graphUrl);
+      
+      if (predicates.length === 0) {
+        this.logger.warn(`No predicates found in graph ${graphUrl}`);
+        return [];
+      }
+
+      // Build SPARQL SELECT variables động
+      const selectVars = ['?s'];
+      const optionalPatterns: string[] = [];
+
+      // Map predicates thành variables
+      const predicateMap: Record<string, string> = {};
+      predicates.forEach((predicate, index) => {
+        const varName = `?p${index}`;
+        selectVars.push(varName);
+        optionalPatterns.push(`OPTIONAL { ?s <${predicate}> ${varName} }`);
+        predicateMap[predicate] = varName.substring(1); // Remove '?'
+      });
+
+      // Build query động
+      const query = `
+        PREFIX geo1: <http://www.opendatafithou.net/ont/geosparql#>
+        
+        SELECT ${selectVars.join(' ')}
+        WHERE {
+          GRAPH <${graphUrl}> {
+            ?s a geo1:Point .
+            ${optionalPatterns.join('\n            ')}
+          }
+        }
+        LIMIT ${limit}
+      `.trim();
+
+      this.logger.debug(`Dynamic query for ${graphUrl}:\n${query}`);
+
+      const results = await this.fusekiService.executeSelect(query);
+
+      // Transform results thành POI objects
+      return this.transformGraphResults(results, predicates, predicateMap, graphUrl);
+    } catch (error) {
+      this.logger.error(`Error fetching from graph ${graphUrl}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Transform SPARQL results thành POI objects
+   */
+  private transformGraphResults(
+    results: any[],
+    predicates: string[],
+    predicateMap: Record<string, string>,
+    graphUrl: string,
+  ): any[] {
+
+    return results
+      .map((row) => {
+        try {
+          const typeFromGraph = this.extractTypeFromGraph(graphUrl);
+          
+          // Build POI object động từ predicates
+          const poi: any = {
+            id: row.s,
+            type: typeFromGraph,
+          };
+
+          // Map từng predicate sang field
+          predicates.forEach((predicate) => {
+            const varName = predicateMap[predicate];
+            const value = row[varName];
+            
+            if (!value) return; // Skip null values
+
+            // Extract field name từ predicate URI
+            const parts = predicate.split(/[/#]/);
+            let fieldName = parts[parts.length - 1];
+            
+            // Special handling cho các field quan trọng
+            if (fieldName === 'asWKT' || predicate.includes('asWKT')) {
+              poi.wkt = value;
+              try {
+                const { lat, lon } = this.parseWKT(value);
+                poi.lat = lat;
+                poi.lon = lon;
+              } catch (e) {
+                this.logger.warn(`Failed to parse WKT: ${value}`);
+              }
+            } else if (fieldName === 'label' || fieldName.includes('name')) {
+              if (!poi.name) poi.name = value;
+            } else if (fieldName.includes('addr') || fieldName === 'address') {
+              poi.address = value;
+            } else {
+              // Normalize field name
+              fieldName = fieldName.replace(/:/g, '_');
+              poi[fieldName] = value;
+            }
+          });
+
+          // Fallback cho name
+          if (!poi.name) {
+            const id = poi.id?.split('/').pop() || 'unknown';
+            poi.name = `POI #${id.substring(0, 10)}`;
+          }
+
+          // Ensure coordinates exist
+          if (!poi.lat || !poi.lon) {
+            throw new Error('Missing coordinates');
+          }
+
+          return poi;
+        } catch (parseError) {
+          this.logger.warn(`Failed to parse POI: ${parseError.message}`, row);
+          return null;
+        }
+      })
+      .filter((poi) => poi !== null);
+  }
+
+  /**
+   * Parse WKT string để lấy lat/lon
+   * Format: "POINT(lon lat)" hoặc "POINT (lon lat)"
+   * VD: "POINT(105.835 21.029)"
+   */
+  private parseWKT(wkt: string): { lat: number; lon: number } {
+    if (!wkt || typeof wkt !== 'string') {
+      throw new Error('Invalid or missing WKT');
+    }
+
+    // Regex để extract coordinates từ POINT(lon lat)
+    const match = wkt.match(/POINT\s*\(\s*([\d.-]+)\s+([\d.-]+)\s*\)/i);
+    
+    if (!match) {
+      throw new Error(`Invalid WKT format: ${wkt}`);
+    }
+
+    const lon = parseFloat(match[1]);
+    const lat = parseFloat(match[2]);
+
+    // Validate coordinates
+    if (isNaN(lat) || isNaN(lon)) {
+      throw new Error(`Invalid coordinates in WKT: ${wkt}`);
+    }
+
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      throw new Error(`Coordinates out of range: lat=${lat}, lon=${lon}`);
+    }
+
+    return { lat, lon };
+  }
+
+  /**
+   * Extract type từ Graph URL
+   * VD: "http://160.250.5.179:3030/graph/school" -> "school"
+   */
+  private extractTypeFromGraph(graphUrl: string): string {
+    const match = graphUrl.match(/\/graph\/([^/]+)$/);
+    return match ? match[1] : 'unknown';
   }
 }
