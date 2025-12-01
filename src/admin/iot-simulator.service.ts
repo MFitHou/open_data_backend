@@ -94,7 +94,7 @@ export class IotSimulatorService {
   /**
    * Mô phỏng dữ liệu giao thông - chạy mỗi 10 giây
    */
-  @Cron('*/10 * * * * *')
+  // @Cron('*/10 * * * * *') // Tạm thời tắt
   async handleTrafficSimulation() {
     this.logger.debug('Running traffic simulation...');
 
@@ -159,7 +159,7 @@ ${observations.join('\n')}
   /**
    * Mô phỏng dữ liệu ngập lụt - chạy mỗi 20 giây
    */
-  @Cron('*/20 * * * * *')
+  // @Cron('*/20 * * * * *') // Tạm thời tắt
   async handleFloodSimulation() {
     this.logger.debug('Running flood simulation...');
 

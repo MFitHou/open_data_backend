@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Controller, Get, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { IotSimulatorService } from './iot-simulator.service';
 import { CreatePoiDto } from './dto/CreatePoiDto';
@@ -52,10 +52,42 @@ export class AdminController {
   }
 
   /**
-   * POST /admin/poi
+   * GET /admin/pois/schema
+   * Lấy schema (cấu trúc thuộc tính) của một loại POI
+   * Query params: type (school, bus-stop, play-ground, drinking-water, toilet)
+   */
+  @Get('pois/schema')
+  async getPoiSchema(@Query('type') type: string) {
+    try {
+      if (!type) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'Missing required query parameter: type',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const schema = await this.adminService.getPoiSchema(type);
+      return schema;
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Failed to fetch POI schema',
+          error: error.message,
+        },
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * POST /admin/pois
    * Tạo POI mới trong database
    */
-  @Post('poi')
+  @Post('pois')
   async createPoi(@Body() createPoiDto: CreatePoiDto) {
     try {
       const result = await this.adminService.createPoi(createPoiDto);
@@ -72,6 +104,60 @@ export class AdminController {
           error: error.message,
         },
         error.status || HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  /**
+   * GET /admin/pois
+   * Lấy danh sách POIs từ Named Graphs với filter
+   * Query params: type (school, bus-stop, play-ground, drinking-water, toilet, all), page, limit
+   */
+  @Get('pois')
+  async getPois(
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    try {
+      const pageNum = page ? parseInt(page, 10) : 1;
+      const limitNum = limit ? parseInt(limit, 10) : 10;
+
+      const result = await this.adminService.getPois(type, pageNum, limitNum);
+      return result;
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Failed to fetch POIs',
+          error: error.message,
+        },
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * DELETE /admin/pois/:id
+   * Xóa POI khỏi database
+   */
+  @Delete('pois/:id')
+  async deletePoi(@Param('id') id: string) {
+    try {
+      const result = await this.adminService.deletePoi(id);
+      return {
+        success: true,
+        message: 'POI deleted successfully',
+        data: result,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Failed to delete POI',
+          error: error.message,
+        },
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
