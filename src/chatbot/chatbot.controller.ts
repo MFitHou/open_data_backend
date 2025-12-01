@@ -18,10 +18,14 @@
 
 import { Controller, Get, HttpException, HttpStatus, Post, Body, BadRequestException, Query } from '@nestjs/common';
 import { ChatbotService } from './chatbot.service';
+import { SmartSearchService } from './smart-search.service';
 
 @Controller('chat')
 export class ChatbotController {
-    constructor(private readonly chatbotService: ChatbotService) {}
+    constructor(
+        private readonly chatbotService: ChatbotService,
+        private readonly smartSearchService: SmartSearchService,
+    ) {}
 
     @Post('main')
     async main(@Body('contents') contents: string) {
@@ -40,6 +44,40 @@ export class ChatbotController {
             return result;
         } catch (error) {
             throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post('testFC')
+    async testFC(@Body('contents') contents: string) {
+         try {
+            const result = await this.chatbotService.testFunctionCalling(contents);
+            return result;
+        } catch (error) {
+            console.error(error);
+            throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post('smart-search')
+    async smartSearch(@Body() body: { query: string; context?: any; mode?: 'ai' | 'traditional' }) {
+        try {
+            const { query, context, mode = 'ai' } = body;
+
+            if (!query || typeof query !== 'string') {
+                throw new BadRequestException('Query is required');
+            }
+
+            if (mode === 'traditional') {
+                return await this.smartSearchService.traditionalSearch(query, context);
+            }
+
+            return await this.smartSearchService.smartSearch(query, context);
+        } catch (error) {
+            console.error('Smart search error:', error);
+            throw new HttpException(
+                error.message || 'Smart search failed',
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR
+            );
         }
     }
 }

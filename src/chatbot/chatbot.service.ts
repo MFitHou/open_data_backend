@@ -16,7 +16,9 @@
  */
 
 import { Injectable, Logger, OnModuleInit, BadRequestException } from "@nestjs/common";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { ChatTool } from "../common/decorators/chat-tools.decorator";
+import { ChatToolsRegistry } from "./chat-tools.registry";
 
 
 @Injectable()
@@ -24,6 +26,8 @@ export class ChatbotService implements OnModuleInit {
     private readonly logger = new Logger(ChatbotService.name);
     private genAI: GoogleGenerativeAI;
     private model: any;
+
+    constructor(private readonly chatToolsRegistry: ChatToolsRegistry) {}
 
     onModuleInit() {
         if (!process.env.GEMINI_API_KEY) {
@@ -34,9 +38,39 @@ export class ChatbotService implements OnModuleInit {
         this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         this.model = this.genAI.getGenerativeModel({
             model: "gemini-2.5-flash",
-            systemInstruction: `You are a location classification assistant. 
-                Only respond to questions about locations in Vietnam, including tourist destinations and public facilities.
-                If the question is not appropriate, reply: "Inappropriate question."`
+            systemInstruction: `### SYSTEM ROLE
+                                You are a specialized **Location & Travel Intelligence Assistant**. You are friendly, knowledgeable about the physical world, and helpful with general daily conversation.
+
+                                ### PERMITTED CAPABILITIES (WHAT YOU CAN DO)
+                                1.  **Geospatial & Travel Expert:**
+                                    * Provide detailed data on locations, landmarks, addresses, and routes.
+                                    * Explain history, culture, and practical tips for specific places.
+                                    * Perform simple travel-related calculations (e.g., converting currencies, estimating travel time based on speed and distance).
+                                2.  **Conversational Companion:**
+                                    * Engage in polite, casual small talk (greetings, asking about the user's day).
+
+                                ### STRICT LIMITATIONS (WHAT YOU CANNOT DO)
+                                You must **REFUSE** to perform tasks that fall into specialized professional or academic domains unrelated to travel/geography.
+
+                                **1. NO CODING or TECHNICAL ENGINEERING:**
+                                * Do not write, debug, explain, or format computer code (Python, Java, HTML, etc.).
+                                * Do not discuss software architecture or IT troubleshooting.
+
+                                **2. NO ACADEMIC MATH or HOMEWORK:**
+                                * Do not solve math problems (Algebra, Calculus, Geometry proofs) unless it is a direct distance/time calculation for a trip.
+                                * Do not help with general school homework (Physics, Chemistry, etc.).
+
+                                **3. NO MEDIA GENERATION:**
+                                * Do not generate images, ASCII art, or creative visual descriptions requested as "drawings".
+                                * If asked to generate an image, state that you are a text-based map assistant.
+
+                                **4. NO PROFESSIONAL ADVICE:**
+                                * Do not provide medical diagnoses or legal advice.
+
+                                ### REFUSAL STRATEGY
+                                When a user asks for a prohibited topic, kindly decline and **pivot** back to your persona.
+                                * *Bad Response:* "I cannot do that." (Too dry)
+                                * *Good Response:* "I'm not built for complex math/coding, I'm just a travel guide! But I can help you figure out how long it takes to drive to Da Nang."`
         });
         
         this.logger.log("GeminiService initialized");
@@ -103,6 +137,7 @@ export class ChatbotService implements OnModuleInit {
                     
                     locationData = JSON.parse(jsonMatch[0]);
                 }
+
                 
                 // Validate response structure
                 if (!locationData.locations || !Array.isArray(locationData.locations)) {
@@ -248,40 +283,6 @@ export class ChatbotService implements OnModuleInit {
         }
     }
 
-    async classifyLocation(query: string): Promise<string> {
-        if (!this.genAI) {
-            throw new BadRequestException('Gemini not configured');
-        }
-
-        try {
-            const model = this.genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
-                systemInstruction: `You are a location classification assistant. 
-                Only respond to questions about locations in Vietnam, including tourist destinations and public facilities.
-                If the question is not appropriate, reply: "Inappropriate question."`,
-                generationConfig: {
-                    temperature: 0,
-                    maxOutputTokens: 20,
-                }
-            });
-
-            const result = await model.generateContent(`Phân loại: "${query}"`);
-            const text = result.response.text().trim().toLowerCase();
-
-            const validTypes = ['atm', 'hospital', 'school', 'toilet', 'playground', 'bus_stop', 'drinking_water'];
-            if (validTypes.includes(text)) {
-                return text;
-            }
-
-            this.logger.warn(`Invalid classification: ${text}`);
-            return 'unknown';
-
-        } catch (error) {
-            this.logger.error('Classification error:', error);
-            throw new BadRequestException('Classification failed');
-        }
-    }
-
     async test(contents: string) {
         if (!this.genAI) {
             throw new BadRequestException('Gemini not configured');
@@ -414,6 +415,128 @@ export class ChatbotService implements OnModuleInit {
                 questionType,
                 originalQuestion: contents
             };
+        }
+    }
+
+
+    async testFunctionCalling(contents: string) {
+        if(!contents || typeof contents !== 'string'){
+            throw new BadRequestException('Invalid input: contents must be a non-empty string');
+        }
+
+        const toolsDefinition = this.chatToolsRegistry.toolsSchema; 
+
+        try{
+            const model = this.genAI.getGenerativeModel({
+                model: "gemini-2.5-flash",
+                systemInstruction: `Bạn là một trợ lý ảo thông minh, thân thiện và linh hoạt.
+                                    QUY TẮC CỐT LÕI VỀ SỬ DỤNG CÔNG CỤ (TOOLS):
+                                    1. **Khi nào dùng Tool:** 
+                                        - Khi người dùng gửi lên tên một địa điểm, hỏi thông tin về địa điểm, tìm kiếm địa điểm hoặc chỉ đường.
+                                        - Ưu tiên sử dụng hàm tìm kiếm Wikidata để lấy thông tin địa điểm (ví dụ: tọa độ, mô tả, hình ảnh).
+                                        - Sử dụng hàm geocoding (fetchGeocodeByName) KHI VÀ CHỈ KHI không tìm thấy thông tin địa điểm từ Wikidata.
+                                    2. **Khi nào dùng Kiến thức nội tại (Internal Knowledge):**
+                                        - Nếu người dùng hỏi về lịch sử, văn hóa, định nghĩa, xin lời khuyên, hoặc trò chuyện xã giao (ví dụ: "Giới thiệu Hà Nội", "Ăn gì ngon ở Sài Gòn?"), HÃY SỬ DỤNG KIẾN THỨC CỦA BẠN để trả lời.
+                                        - KHÔNG được trả lời "Tôi không biết" hoặc "Tôi không có thông tin" chỉ vì không tìm thấy tool phù hợp. Hãy trả lời dựa trên những gì bạn đã được huấn luyện.
+                                    3. **Kết hợp (Hybrid):** Nếu bạn gọi tool và nhận được kết quả (ví dụ: tọa độ), hãy dùng kết quả đó kết hợp với lời văn tự nhiên để trả lời. Đừng chỉ trả về dữ liệu thô.
+                                    
+                                    PHONG CÁCH TRẢ LỜI:
+                                    - Trả lời theo ngôn ngữ của câu hỏi.
+                                    - Giọng văn tự nhiên, hữu ích, như một hướng dẫn viên du lịch thực thụ.
+                                    - Nếu tool trả về lỗi hoặc không tìm thấy, hãy xin lỗi và cố gắng đưa ra thông tin gợi ý liên quan từ kiến thức của bạn.`,
+                generationConfig: {
+                    temperature: 0.3,
+                },
+                tools: [
+                    { functionDeclarations: toolsDefinition }
+                ]
+            });
+
+            const chat = model.startChat();
+            let result = await chat.sendMessage(contents);
+            let response = result.response;
+            let functionCalls = response.functionCalls();
+            let functionResult : any[] = [];
+
+            while(functionCalls && functionCalls.length > 0){
+                const call = functionCalls[0];
+                this.logger.log(`Function call requested: ${JSON.stringify(call)}`);
+                const { name, args } = call;
+
+                let toolResult;
+                try {
+                    toolResult = await this.chatToolsRegistry.executeTool(name, args);
+                } catch (e) {
+                    toolResult = { error: e.message };
+                }
+
+
+                if (toolResult === undefined || toolResult === null) {
+                    toolResult = { result: 'Success' }; 
+                } else if (Array.isArray(toolResult)) {
+                    toolResult = { search_results: toolResult };
+                 } else if (typeof toolResult !== 'object') {
+                    toolResult = { result: toolResult };
+                }
+
+                functionResult.push({
+                    functionName: name,
+                    arguments: args,
+                    result: toolResult
+                });
+
+                result = await chat.sendMessage([{
+                    functionResponse: {
+                        name: name,
+                        response: toolResult
+                    }
+                }]);
+
+                response = result.response;
+                functionCalls = response.functionCalls();
+            }
+
+            return {
+                finalResponse: response.text(),
+                functionCalls: functionResult
+            }
+            
+        }catch(error){
+            this.logger.error('Function calling error:', error);
+            throw new BadRequestException('Function calling failed: ' + (error.message || 'Unknown error'));
+        }
+    }
+
+    @ChatTool({
+        name: 'fetchGeocodeByName',
+        description: 'Fetches geocode (latitude and longitude) for a given location name using OpenCage Geocoding API. Only use this tool when you need to get coordinates for a location that cannot be found via Wikidata.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                name: { type: SchemaType.STRING }
+            },
+            required: ['name']
+        }
+    })
+    private async fetchGeocodeByName({ name }: { name: string }){
+        const geoResponse = await fetch(
+            `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(name)}&key=${process.env.OPEN_CAGE_API_KEY}&countrycode=vn&limit=1`,
+            {
+                method: 'GET',
+                headers: { "Content-Type": 'application/json' },
+            }
+        );
+
+        if (!geoResponse.ok) {
+            this.logger.warn(`Geocoding API failed with status: ${geoResponse.status}`);
+        } else {
+            const geoData = await geoResponse.json();
+            
+            if (geoData.results && geoData.results.length > 0) {
+                return geoData.results[0].geometry;
+            } else {
+                this.logger.warn(`No geocoding results found for: ${name}`);
+            }
         }
     }
 }

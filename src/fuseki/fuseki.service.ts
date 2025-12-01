@@ -16,6 +16,8 @@
  */
 
 import { Injectable, Logger, OnModuleInit, BadRequestException } from "@nestjs/common";
+import { ChatTool } from "src/common/decorators/chat-tools.decorator";
+import { SchemaType } from "@google/generative-ai";
 
 @Injectable()
 export class FusekiService implements OnModuleInit {
@@ -192,6 +194,21 @@ export class FusekiService implements OnModuleInit {
     };
   }
 
+  @ChatTool({
+    name: 'searchPlaygroundsNearby',
+    description: 'Tìm sân chơi gần vị trí kinh độ/vĩ độ cho trước',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        limit: { type: SchemaType.NUMBER, description: 'Số sân chơi tối đa trả về' },
+      },
+      required: ['lon', 'lat', 'radiusKm'],
+    },
+  })
+
   // Tìm playground gần
   async searchPlaygroundsNearby(params: {
     lon: number;
@@ -268,6 +285,21 @@ export class FusekiService implements OnModuleInit {
       items: results
     };
   }
+
+  @ChatTool({
+    name: 'searchHospitalsNearby',
+    description: 'Tìm bệnh viện gần vị trí kinh độ/vĩ độ cho trước',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        limit: { type: SchemaType.NUMBER, description: 'Số bệnh viện tối đa trả về' },
+      },
+      required: ['lon', 'lat', 'radiusKm'],
+    },
+  })
 
   // Tìm bệnh viện gần
   async searchHospitalsNearby(params: {
@@ -348,6 +380,22 @@ export class FusekiService implements OnModuleInit {
       items: results
     };
   }
+
+
+  @ChatTool({
+    name: 'searchToiletsNearby',
+    description: 'Tìm nhà vệ sinh gần vị trí kinh độ/vĩ độ cho trước',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        limit: { type: SchemaType.NUMBER, description: 'Số nhà vệ sinh tối đa trả về' },
+      },
+      required: ['lon', 'lat', 'radiusKm'],
+    },
+  })
 
   // Tìm nhà vệ sinh gần
   async searchToiletsNearby(params: {
@@ -431,6 +479,21 @@ export class FusekiService implements OnModuleInit {
     };
   }
 
+  @ChatTool({
+    name: 'searchBusStopsNearby',
+    description: 'Tìm trạm xe buýt gần vị trí kinh độ/vĩ độ cho trước',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        limit: { type: SchemaType.NUMBER, description: 'Số trạm xe buýt tối đa trả về' },
+      },
+      required: ['lon', 'lat', 'radiusKm'],
+    },
+  })
+
   // Tìm trạm xe buýt gần
   async searchBusStopsNearby(params: {
     lon: number;
@@ -509,6 +572,20 @@ export class FusekiService implements OnModuleInit {
     };
   }
 
+  @ChatTool({
+    name: 'searchATMsNearby',
+    description: 'Tìm ATM gần vị trí kinh độ/vĩ độ cho trước',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        limit: { type: SchemaType.NUMBER, description: 'Số ATM tối đa trả về' },
+      },
+      required: ['lon', 'lat', 'radiusKm'],
+    },
+  })
   // Tìm ATM gần
   async searchATMsNearby(params: {
     lon: number;

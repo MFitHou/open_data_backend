@@ -16,6 +16,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { SchemaType } from '@google/generative-ai';
+import { ChatTool } from 'src/common/decorators/chat-tools.decorator';
 
 export interface WikidataInfo {
   label?: string;
@@ -226,7 +228,22 @@ export class WikidataService {
     }
   }
 
-  async search(query: string, limit: number = 15): Promise<SearchResult[]> {
+  @ChatTool({
+    name: 'searchInforByName',
+    description: 'Tìm kiếm địa điểm trên Wikidata dựa trên từ khóa và trả về danh sách kết quả với thông tin chi tiết.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        query: { type: SchemaType.STRING, description: 'Từ khóa tìm kiếm địa điểm trên Wikidata' },
+        limit: { type: SchemaType.NUMBER, description: 'Số lượng kết quả tối đa trả về' },
+      },
+      required: ['query'],
+    },
+  })
+
+  async searchInforByName(params: { query: string; limit?: number }): Promise<SearchResult[]> {
+    const { query, limit = 15 } = params;
+    console.log(`Searching Wikidata for: ${query} (limit: ${limit})`);
     try {
       const sparqlQuery = `
         SELECT DISTINCT ?place ?placeLabel ?placeDescription ?coord ?image ?instanceOfLabel

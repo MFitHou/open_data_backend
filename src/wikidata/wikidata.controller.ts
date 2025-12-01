@@ -61,6 +61,6 @@ export class WikidataController {
       throw new HttpException('Search query is required', HttpStatus.BAD_REQUEST);
     }
     
-    return await this.wikidataService.search(query.trim(), limit);
+    return await this.wikidataService.searchInforByName({ query: query.trim(), limit });
   }
 }
