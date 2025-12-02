@@ -41,14 +41,11 @@ export class SmartSearchService {
   async smartSearch(query: string, context?: SearchContext) {
     try {
       this.logger.log(`Smart search query: "${query}"`);
-      
-      // Build contextualized prompt
+
       const prompt = this.buildSearchPrompt(query, context);
       
-      // Use function calling to process query
       const result = await this.chatbotService.testFunctionCalling(prompt);
 
-      // Parse and structure the result
       const parsedResult = this.parseSearchResult(result, context);
       
       return parsedResult;
@@ -65,12 +62,10 @@ export class SmartSearchService {
     try {
       this.logger.log(`Traditional search: "${query}"`);
 
-      // Search from Wikidata
       const wikidataResults = await this.wikidataService
-        .searchInforByName({ query, limit: 8 })
+        .searchInforByName({ query, limit: 20 })
         .catch(() => []);
 
-      // Merge and rank results
       const merged = wikidataResults.map((r: any) => ({ 
         ...r, 
         source: 'wikidata',
@@ -128,6 +123,7 @@ export class SmartSearchService {
     const nearbyResults: any[] = [];
     let geocodeResult: any = null;
     let radiusKm = 2;
+    let searchCenter: { lat: number; lon: number } | null = null;
 
     for (const call of functionCalls) {
       const { functionName, result: callResult, arguments: args } = call;
@@ -144,16 +140,39 @@ export class SmartSearchService {
       // Handle nearby searches (ATMs, hospitals, etc.)
       if (functionName.startsWith('search') && functionName.includes('Nearby')) {
         if (callResult?.items) {
+          // Add main items
           nearbyResults.push(...callResult.items.map((r: any) => ({
             ...r,
             source: 'overpass',
             score: this.calculateScore(r)
           })));
+          
+          const addedPois = new Set(nearbyResults.map(r => r.poi));
+          callResult.items.forEach((item: any) => {
+            if (item.relatedEntities && Array.isArray(item.relatedEntities)) {
+              item.relatedEntities.forEach((related: any) => {
+                // Only add if has coordinates and not duplicate
+                if (related.lon && related.lat && !addedPois.has(related.poi)) {
+                  addedPois.add(related.poi);
+                  nearbyResults.push({
+                    ...related,
+                    source: 'overpass',
+                    score: this.calculateScore(related),
+                    relatedEntities: [] // Don't nest relations
+                  });
+                }
+              });
+            }
+          });
         }
         
         // Extract radius from arguments
         if (args?.radiusKm) {
           radiusKm = args.radiusKm;
+        }
+        
+        if (args?.lat && args?.lon) {
+          searchCenter = { lat: args.lat, lon: args.lon };
         }
       }
 
@@ -165,10 +184,11 @@ export class SmartSearchService {
 
     // Determine action based on results
     if (nearbyResults.length > 0) {
-      // Determine center point
-      const center = geocodeResult 
-        ? { lat: geocodeResult.lat, lon: geocodeResult.lng }
-        : context?.currentLocation || null;
+      // Determine center point - prioritize searchCenter from function args
+      const center = searchCenter 
+        || (geocodeResult ? { lat: geocodeResult.lat, lon: geocodeResult.lng } : null)
+        || context?.currentLocation 
+        || null;
 
       return {
         action: 'nearby_search',
