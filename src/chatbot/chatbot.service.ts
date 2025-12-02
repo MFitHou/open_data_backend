@@ -80,9 +80,9 @@ export class ChatbotService implements OnModuleInit {
                                 * User explicitly mentions relationships between two or more types of places
                                 * You need to find places of type A that have specific spatial relationships with places of types B, C, D...
                                 * **IMPORTANT**: You MUST provide lat/lon coordinates. Get them from:
-                                  1. **Geocode the location first** using fetchGeocodeByName if location is mentioned (e.g., "Hồ Hoàn Kiếm")
-                                  2. Use coordinates from previous search context
-                                  3. Ask user for location if not available
+                                  1. **Use current location from context** if no specific location mentioned (e.g., "find parks near bus stops")
+                                  2. **Geocode the location first** using fetchGeocodeByName if location is mentioned (e.g., "find parks near bus stops in Hồ Hoàn Kiếm")
+                                  3. Use coordinates from previous search context
                                 * Parameters: 
                                   - lon, lat (REQUIRED - from fetchGeocodeByName result or context)
                                   - targetType (A), relatedTypes (array of B, C, D...)
@@ -93,9 +93,12 @@ export class ChatbotService implements OnModuleInit {
                                 **Use searchNearby when:**
                                 * Simple query for one or more types (e.g., "find restaurants and cafes", "show me all ATMs")
                                 * No relationship between different types is specified
-                                * **IMPORTANT**: You MUST provide lat/lon coordinates (same as searchNearbyWithTopology)
+                                * **IMPORTANT**: You MUST provide lat/lon coordinates. Get them from:
+                                  1. **Use current location from context** if no specific location mentioned (e.g., "find ATMs nearby")
+                                  2. **Geocode the location first** using fetchGeocodeByName if location is mentioned (e.g., "find ATMs in Hồ Hoàn Kiếm")
+                                  3. Use coordinates from previous search context
                                 * Parameters: 
-                                  - lon, lat (REQUIRED)
+                                  - lon, lat (REQUIRED - from context.currentLocation, fetchGeocodeByName, or previous context)
                                   - types[] (one or more types)
                                   - radiusKm (default 1km)
                                   - includeTopology=true for enriched data
@@ -104,6 +107,12 @@ export class ChatbotService implements OnModuleInit {
                                 * "Tìm công viên gần trạm xe buýt ở Hồ Hoàn Kiếm" → 
                                   1. fetchGeocodeByName(name="Hồ Hoàn Kiếm") to get lat/lon
                                   2. searchNearbyWithTopology(lon=105.852, lat=21.028, targetType='park', relatedTypes=['bus_stop'], relationship='isNextTo', radiusKm=1)
+                                * "Tìm công viên gần trạm xe buýt" (no location) → 
+                                  Use lat/lon from context.currentLocation
+                                  searchNearbyWithTopology(lon=context.lon, lat=context.lat, targetType='park', relatedTypes=['bus_stop'], relationship='isNextTo')
+                                * "Tìm quán ăn gần đây" (no specific location) → 
+                                  Use lat/lon from context.currentLocation
+                                  searchNearby(lon=context.lon, lat=context.lat, types=['restaurant'])
                                 * "Tìm quán ăn gần trạm sạc" → searchNearbyWithTopology(lon=..., lat=..., targetType='restaurant', relatedTypes=['charging_station'], relationship='isNextTo')
                                 * "Tìm quán ăn gần trạm sạc và ATM" → searchNearbyWithTopology(lon=..., lat=..., targetType='restaurant', relatedTypes=['charging_station', 'atm'], relationship='isNextTo')
                                 * "Tìm cafe trong công viên" → searchNearbyWithTopology(lon=..., lat=..., targetType='cafe', relatedTypes=['park'], relationship='containedInPlace')
