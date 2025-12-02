@@ -44,7 +44,7 @@ export class SmartSearchService {
 
       const prompt = this.buildSearchPrompt(query, context);
       
-      const result = await this.chatbotService.testFunctionCalling(prompt);
+      const result = await this.chatbotService.ChatFunctionCalling(prompt);
 
       const parsedResult = this.parseSearchResult(result, context);
       
@@ -94,11 +94,11 @@ export class SmartSearchService {
     let prompt = query;
 
     if (context?.currentLocation) {
-      prompt += `\n\n[Context] Vị trí hiện tại: ${context.currentLocation.lat}, ${context.currentLocation.lon}`;
+      prompt += `\n\n[Context] Current location: ${context.currentLocation.lat}, ${context.currentLocation.lon}`;
     }
 
     if (context?.previousQuery) {
-      prompt += `\n[Context] Câu hỏi trước: ${context.previousQuery}`;
+      prompt += `\n[Context] Previous query: ${context.previousQuery}`;
     }
 
     return prompt;
@@ -216,7 +216,7 @@ export class SmartSearchService {
         message: finalResponse,
         location: geocodeResult,
         suggestions: [{
-          name: 'Vị trí tìm được',
+          name: 'Location Found',
           coordinates: [geocodeResult.lng, geocodeResult.lat],
           source: 'geocode',
           score: 100

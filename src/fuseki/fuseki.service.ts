@@ -91,6 +91,151 @@ export class FusekiService implements OnModuleInit {
     return rows;
   }
 
+  async getPOIsByType(params: {
+    type: string;
+    limit?: number;
+    language?: string;
+  }) {
+    const { language = 'en' } = params;
+    const type = this.convertToSchemaType(params.type);
+    const limit = Math.min(Math.max(params.limit ?? 100, 1), 2000);
+
+    // Map type to graph URI
+    const typeToGraphMap: Record<string, string> = {
+      'atm': this.configService.get<string>('FUSEKI_GRAPH_ATM') || 'http://localhost:3030/graph/atm',
+      'bank': this.configService.get<string>('FUSEKI_GRAPH_BANK') || 'http://localhost:3030/graph/bank',
+      'restaurant': this.configService.get<string>('FUSEKI_GRAPH_RESTAURANT') || 'http://localhost:3030/graph/restaurant',
+      'cafe': this.configService.get<string>('FUSEKI_GRAPH_CAFE') || 'http://localhost:3030/graph/cafe',
+      'hospital': this.configService.get<string>('FUSEKI_GRAPH_HOSPITAL') || 'http://localhost:3030/graph/hospital',
+      'school': this.configService.get<string>('FUSEKI_GRAPH_SCHOOL') || 'http://localhost:3030/graph/school',
+      'bus_stop': this.configService.get<string>('FUSEKI_GRAPH_BUS_STOP') || 'http://localhost:3030/graph/bus-stop',
+      'park': this.configService.get<string>('FUSEKI_GRAPH_PARK') || 'http://localhost:3030/graph/park',
+      'charging_station': this.configService.get<string>('FUSEKI_GRAPH_CHARGING_STATION') || 'http://localhost:3030/graph/charging-station',
+      'pharmacy': this.configService.get<string>('FUSEKI_GRAPH_PHARMACY') || 'http://localhost:3030/graph/pharmacy',
+      'police': this.configService.get<string>('FUSEKI_GRAPH_POLICE') || 'http://localhost:3030/graph/police',
+      'fire_station': this.configService.get<string>('FUSEKI_GRAPH_FIRE_STATION') || 'http://localhost:3030/graph/fire-station',
+      'parking': this.configService.get<string>('FUSEKI_GRAPH_PARKING') || 'http://localhost:3030/graph/parking',
+      'fuel_station': this.configService.get<string>('FUSEKI_GRAPH_FUEL_STATION') || 'http://localhost:3030/graph/fuel-station',
+      'supermarket': this.configService.get<string>('FUSEKI_GRAPH_SUPERMARKET') || 'http://localhost:3030/graph/supermarket',
+      'library': this.configService.get<string>('FUSEKI_GRAPH_LIBRARY') || 'http://localhost:3030/graph/library',
+    };
+
+    const graphUri = typeToGraphMap[params.type.toLowerCase()];
+    if (!graphUri) {
+      throw new BadRequestException(`Unknown POI type: ${type}`);
+    }
+
+    this.logger.debug(`Fetching POIs of type: ${type} from graph: ${graphUri}`);
+
+    const query = `
+      PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+      PREFIX schema: <http://schema.org/>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+      SELECT ?s ?finalName ?lat ?lon (GROUP_CONCAT(DISTINCT ?type; separator=",") AS ?types)
+      WHERE {
+        GRAPH <${graphUri}> {
+          ?s a schema:${type} .
+          ?s geo:asWKT ?wkt .
+
+          # Thử tìm tên tiếng Anh
+          OPTIONAL { 
+            ?s schema:name ?name_en . 
+            FILTER(lang(?name_en) = "en") 
+          }
+
+          # Thử tìm tên tiếng Việt
+          OPTIONAL { 
+            ?s schema:name ?name_vi . 
+            FILTER(lang(?name_vi) = "vi") 
+          }
+
+          # Thử tìm tên không có tag ngôn ngữ (dự phòng)
+          OPTIONAL { 
+            ?s schema:name ?name_raw . 
+            FILTER(lang(?name_raw) = "") 
+          }
+
+          # Lấy tất cả types
+          OPTIONAL { ?s a ?type . }
+
+          # Chọn tên theo thứ tự ưu tiên: Anh -> Việt -> Gốc -> "Không tên"
+          BIND(COALESCE(?name_en, ?name_vi, ?name_raw, "Unknown Name") AS ?finalName)
+          
+          # Parse tọa độ từ WKT POINT(lon lat)
+          BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$1") AS ?lonStr)
+          BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$2") AS ?latStr)
+          BIND(xsd:double(?lonStr) AS ?lon)
+          BIND(xsd:double(?latStr) AS ?lat)
+        }
+      }
+      GROUP BY ?s ?finalName ?lat ?lon
+      LIMIT ${limit}
+    `;
+
+    this.logger.log(`Executing query for type ${type}:`);
+    this.logger.log(query);
+
+    const rows = await this.runSelect(query);
+    this.logger.log(`Found ${rows.length} POIs of type ${type}`);
+
+    // Transform results
+    const results = rows.map((row: any) => {
+      const finalName = row.finalName || 'Unknown';
+      const lat = parseFloat(row.lat || '0');
+      const lon = parseFloat(row.lon || '0');
+
+      // Parse types
+      const typesString = row.types || '';
+      const types = typesString.split(',').filter((t: string) => t.trim());
+      
+
+      const typeKey = params.type.toLowerCase();
+      let amenity: string | undefined;
+      let highway: string | undefined;
+      let leisure: string | undefined;
+      
+      const amenityTypes = ['atm', 'bank', 'restaurant', 'cafe', 'hospital', 'school', 
+                            'pharmacy', 'police', 'fire_station', 'parking', 'fuel', 
+                            'supermarket', 'library', 'charging_station', 'convenience_store',
+                            'post_office', 'kindergarten', 'university', 'toilet', 'toilets',
+                            'public_toilet', 'community_center', 'marketplace', 'warehouse',
+                            'drinking_water', 'waste_basket'];
+      const highwayTypes = ['bus_stop'];
+      const leisureTypes = ['park', 'playground'];
+      
+      if (amenityTypes.includes(typeKey)) {
+        amenity = typeKey === 'public_toilet' ? 'toilets' : typeKey;
+      } else if (highwayTypes.includes(typeKey)) {
+        highway = typeKey;
+      } else if (leisureTypes.includes(typeKey)) {
+        leisure = typeKey;
+      } else {
+        // Fallback to amenity
+        amenity = typeKey;
+      }
+
+      return {
+        poi: row.s || `poi_${Math.random()}`,
+        name: finalName,
+        lat,
+        lon,
+        wkt: row.wkt || `POINT(${lon} ${lat})`,
+        distanceKm: 0, // No distance calculation for browse mode
+        amenity,
+        highway,
+        leisure,
+      };
+    });
+
+    return {
+      count: results.length,
+      type,
+      results,
+    };
+  }
+
   // PUBLIC: thực thi SELECT do client cung cấp
   async executeSelect(query: string) {
     if (!query || !query.trim()) {
@@ -309,8 +454,8 @@ export class FusekiService implements OnModuleInit {
     
     this.logger.debug(`Found ${rows.length} raw results from SPARQL query`);
 
-    // Xác định ngôn ngữ mong muốn (mặc định: 'vi')
-    const language = (params.language || 'vi').toLowerCase();
+    // Xác định ngôn ngữ mong muốn (mặc định: 'en')
+    const language = (params.language || 'en').toLowerCase();
     this.logger.debug(`Language preference: ${language}`);
 
     // Deduplicate POIs - ưu tiên ngôn ngữ được chỉ định
@@ -321,77 +466,12 @@ export class FusekiService implements OnModuleInit {
       // Parse types from GROUP_CONCAT result and map schema.org types to amenity/highway/leisure
       if (r.types) {
         const typeArray = r.types.split(',');
-        this.logger.debug(`[${r.name || r.poi}] Found types: ${typeArray.join(', ')}`);
         
         for (const t of typeArray) {
           // Map schema.org types to amenity/highway/leisure
           if (t.includes('schema.org/')) {
             const schemaType = t.split('/').pop();
-            
-            // Leisure types
-            if (schemaType === 'Park') {
-              r.leisure = r.leisure || 'park';
-            } else if (schemaType === 'Playground') {
-              r.leisure = r.leisure || 'playground';
-            } else if (schemaType === 'SportsActivityLocation') {
-              r.leisure = r.leisure || 'sports_centre';
-            }
-            
-            // Highway types
-            else if (schemaType === 'BusStop') {
-              r.highway = r.highway || 'bus_stop';
-            }
-            
-            // Amenity types
-            else if (schemaType === 'Hospital') {
-              r.amenity = r.amenity || 'hospital';
-            } else if (schemaType === 'FinancialService') {
-              r.amenity = r.amenity || 'atm';
-            } else if (schemaType === 'BankOrCreditUnion') {
-              r.amenity = r.amenity || 'bank';
-            } else if (schemaType === 'School') {
-              r.amenity = r.amenity || 'school';
-            } else if (schemaType === 'Preschool') {
-              r.amenity = r.amenity || 'kindergarten';
-            } else if (schemaType === 'CollegeOrUniversity') {
-              r.amenity = r.amenity || 'university';
-            } else if (schemaType === 'Library') {
-              r.amenity = r.amenity || 'library';
-            } else if (schemaType === 'PublicToilet') {
-              r.amenity = r.amenity || 'toilets';
-            } else if (schemaType === 'Restaurant') {
-              r.amenity = r.amenity || 'restaurant';
-            } else if (schemaType === 'CafeOrCoffeeShop') {
-              r.amenity = r.amenity || 'cafe';
-            } else if (schemaType === 'Pharmacy') {
-              r.amenity = r.amenity || 'pharmacy';
-            } else if (schemaType === 'PoliceStation') {
-              r.amenity = r.amenity || 'police';
-            } else if (schemaType === 'FireStation') {
-              r.amenity = r.amenity || 'fire_station';
-            } else if (schemaType === 'PostOffice') {
-              r.amenity = r.amenity || 'post_office';
-            } else if (schemaType === 'ParkingFacility') {
-              r.amenity = r.amenity || 'parking';
-            } else if (schemaType === 'GasStation') {
-              r.amenity = r.amenity || 'fuel';
-            } else if (schemaType === 'AutomotiveBusiness') {
-              r.amenity = r.amenity || 'charging_station';
-            } else if (schemaType === 'GroceryStore') {
-              r.amenity = r.amenity || 'supermarket';
-            } else if (schemaType === 'ConvenienceStore') {
-              r.amenity = r.amenity || 'convenience_store';
-            } else if (schemaType === 'Market') {
-              r.amenity = r.amenity || 'marketplace';
-            } else if (schemaType === 'DrinkingWaterDispenser') {
-              r.amenity = r.amenity || 'drinking_water';
-            } else if (schemaType === 'WasteContainer') {
-              r.amenity = r.amenity || 'waste_basket';
-            } else if (schemaType === 'CommunityCenter') {
-              r.amenity = r.amenity || 'community_centre';
-            } else if (schemaType === 'Warehouse') {
-              r.amenity = r.amenity || 'warehouse';
-            }
+            r.amenity = this.convertFromSchemaType(schemaType);
           }
         }
       }
@@ -845,5 +925,141 @@ export class FusekiService implements OnModuleInit {
       count: enrichedItems.length,
       items: enrichedItems,
     };
+  }
+
+
+  private convertToSchemaType(type: string){
+    switch(type){
+      case 'atm':
+        return 'FinancialService';
+      case 'bank':
+        return 'BankOrCreditUnion';
+      case 'bus_stop':
+      case 'bus-stop':
+        return 'BusStop';
+      case 'cafe':
+        return 'CafeOrCoffeeShop';
+      case 'charging_station':
+      case 'charging-station':
+        return 'AutomotiveBusiness';
+      case 'community_center':
+      case 'community-center':
+      case 'community_centre':
+        return 'CommunityCenter';
+      case 'convenience_store':
+      case 'convenience-store':
+        return 'ConvenienceStore';
+      case 'drinking_water':
+      case 'drinking-water':
+        return 'DrinkingWaterDispenser';
+      case 'fire_station':
+      case 'fire-station':
+        return 'FireStation';
+      case 'fuel_station':
+      case 'fuel-station':
+        return 'GasStation';
+      case 'hospital':
+        return 'Hospital';
+      case 'kindergarten':
+        return 'Preschool';
+      case 'library':
+        return 'Library';
+      case 'marketplace':
+        return 'Market';
+      case 'park':
+        return 'Park';
+      case 'parking':
+        return 'ParkingFacility';
+      case 'pharmacy':
+        return 'Pharmacy';
+      case 'playground':
+        return 'Playground';
+      case 'police':
+        return 'PoliceStation';
+      case 'post_office':
+      case 'post-office':
+        return 'PostOffice';
+      case 'restaurant':
+        return 'Restaurant';
+      case 'school':
+        return 'School';
+      case 'supermarket':
+        return 'GroceryStore';
+      case 'toilet':
+      case 'toilets':
+      case 'public_toilet':
+        return 'PublicToilet';
+      case 'university':
+        return 'CollegeOrUniversity';
+      case 'warehouse':
+        return 'Warehouse';
+      case 'waste_basket':
+      case 'waste-basket':
+        return 'WasteContainer';
+      default:
+        return type;
+    }
+  }
+
+  private convertFromSchemaType(type: string){
+    switch(type){
+      case 'FinancialService':
+        return 'atm';
+      case 'BankOrCreditUnion':
+        return 'bank';
+      case 'BusStop':
+        return 'bus_stop';
+      case 'CafeOrCoffeeShop':
+        return 'cafe';
+      case 'AutomotiveBusiness':
+      case 'ChargingStation':
+        return 'charging_station';
+      case 'CommunityCenter':
+        return 'community_center';
+      case 'ConvenienceStore':
+        return 'convenience_store';
+      case 'DrinkingWaterDispenser':
+        return 'drinking_water';
+      case 'FireStation':
+        return 'fire_station';
+      case 'GasStation':
+        return 'fuel';
+      case 'Hospital':
+        return 'hospital';
+      case 'Preschool':
+        return 'kindergarten';
+      case 'Library':
+        return 'library';
+      case 'Market':
+        return 'marketplace';
+      case 'Park':
+        return 'park';
+      case 'ParkingFacility':
+        return 'parking';
+      case 'Pharmacy':
+        return 'pharmacy';
+      case 'Playground':
+        return 'playground';
+      case 'PoliceStation':
+        return 'police';
+      case 'PostOffice':
+        return 'post_office';
+      case 'Restaurant':
+        return 'restaurant';
+      case 'School':
+        return 'school';
+      case 'GroceryStore':
+        return 'supermarket';
+      case 'PublicToilet':
+        return 'toilets';
+      case 'CollegeOrUniversity':
+        return 'university';
+      case 'Warehouse':
+        return 'warehouse';
+      case 'WasteContainer':
+        return 'waste_basket';
+      default:
+        return type;
+    }
   }
 }

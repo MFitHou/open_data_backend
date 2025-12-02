@@ -88,4 +88,29 @@ export class FusekiController {
       );
     }
   }
+
+  @Get('pois-by-type')
+  async getPOIsByType(
+    @Query('type') type?: string,
+    @Query('limit') limit?: string,
+    @Query('language') language?: string,
+  ) {
+    try {
+      if (!type) {
+        throw new BadRequestException('type parameter is required');
+      }
+      
+      const data = await this.fusekiService.getPOIsByType({
+        type: type.trim(),
+        limit: limit ? parseInt(limit, 10) : 100,
+        language: language || 'vi',
+      });
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get POIs by type failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
 }

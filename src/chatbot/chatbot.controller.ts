@@ -50,7 +50,7 @@ export class ChatbotController {
     @Post('testFC')
     async testFC(@Body('contents') contents: string) {
          try {
-            const result = await this.chatbotService.testFunctionCalling(contents);
+            const result = await this.chatbotService.ChatFunctionCalling(contents);
             return result;
         } catch (error) {
             console.error(error);
