@@ -340,7 +340,7 @@ export class AdminService {
             <${poiUri}> a ${schemaType} , fiware:PointOfInterest ;
               ext:osm_id ${osmId} ;
               ext:osm_type "node" ;
-              schema:name "${escapedName}"@en ${escapedAddress ? `;
+              schema:name "${escapedName}"@vi ${escapedAddress ? `;
               schema:address "${escapedAddress}"` : ''} ;
               geo:asWKT "${wktString}"^^geo:wktLiteral .
           }
@@ -503,8 +503,51 @@ export class AdminService {
         }
       }
 
+      // Deduplicate POIs by ID (xử lý trường hợp schema:name có nhiều language tags)
+      const uniquePoisMap = new Map<string, any>();
+      
+      const isVietnamese = (str: string): boolean => {
+        if (!str) return false;
+        return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(str);
+      };
+      
+      for (const poi of allPois) {
+        const existingPoi = uniquePoisMap.get(poi.id);
+        
+        if (!existingPoi) {
+          // First occurrence - add to map
+          uniquePoisMap.set(poi.id, poi);
+        } else {
+          // Duplicate detected - merge data with Vietnamese preference
+          
+          // Handle name: always prefer Vietnamese
+          if (poi.name) {
+            const poiIsVi = isVietnamese(poi.name);
+            const existingIsVi = isVietnamese(existingPoi.name || '');
+            
+            // Overwrite if:
+            // - Current is Vietnamese and existing is not
+            // - OR current has content and existing is placeholder (POI #xxx)
+            if ((poiIsVi && !existingIsVi) || 
+                (!poi.name.match(/POI #/) && (existingPoi.name || '').match(/POI #/))) {
+              existingPoi.name = poi.name;
+            }
+          }
+          
+          // Merge other fields if missing in existing POI
+          for (const key of Object.keys(poi)) {
+            if (key !== 'name' && !existingPoi[key] && poi[key]) {
+              existingPoi[key] = poi[key];
+            }
+          }
+        }
+      }
+
+      // Convert map back to array
+      const uniquePois = Array.from(uniquePoisMap.values());
+
       // Sort by name and apply pagination
-      const sortedPois = allPois.sort((a, b) => a.name.localeCompare(b.name));
+      const sortedPois = uniquePois.sort((a, b) => a.name.localeCompare(b.name));
       const startIndex = (validPage - 1) * validLimit;
       const endIndex = startIndex + validLimit;
       const paginatedPois = sortedPois.slice(startIndex, endIndex);
@@ -555,10 +598,12 @@ export class AdminService {
       });
 
       // Build query động - sử dụng fiware:PointOfInterest thay vì geo:Point
+      // CHÚ Ý: Không thể dùng FILTER(lang(?px) = "vi") ở đây vì ?px là động
+      // Language preference sẽ được xử lý trong transformGraphResults()
       const query = `
         PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         
-        SELECT ${selectVars.join(' ')}
+        SELECT DISTINCT ?s ${selectVars.slice(1).join(' ')}
         WHERE {
           GRAPH <${graphUrl}> {
             ?s a fiware:PointOfInterest .
@@ -623,11 +668,40 @@ export class AdminService {
                 this.logger.warn(`Failed to parse WKT: ${value}`);
               }
             } else if (fieldName === 'name') {
-              // Extract Vietnamese name (preferred)
-              if (value.includes('@vi')) {
-                poi.name = value.replace('@vi', '').replace(/"/g, '');
-              } else if (!poi.name) {
-                poi.name = value.replace('@en', '').replace(/"/g, '');
+              // Xử lý name với language tags: ưu tiên @vi > @en > no-tag
+              const valueStr = String(value).trim();
+              
+              // Detect Vietnamese by checking for Vietnamese characters
+              const hasVietnameseChars = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(valueStr);
+              
+              // Check for explicit language tags in string
+              const hasViTag = valueStr.includes('@vi') || valueStr.endsWith('"@vi');
+              const hasEnTag = valueStr.includes('@en') || valueStr.endsWith('"@en');
+              
+              // Clean the value (remove quotes and language tags)
+              let cleanValue = valueStr
+                .replace(/^["']|["']$/g, '')  // Remove surrounding quotes
+                .replace(/@(vi|en)$/, '')       // Remove @vi or @en suffix
+                .trim();
+              
+              // Priority logic:
+              // 1. If has @vi tag OR contains Vietnamese characters → use it
+              // 2. If has @en tag and no existing Vietnamese name → use it
+              // 3. No tag and no existing name → use as fallback
+              
+              if (hasViTag || hasVietnameseChars) {
+                // Vietnamese name - highest priority, always overwrite
+                poi.name = cleanValue;
+              } else if (hasEnTag) {
+                // English name - only use if no Vietnamese name exists
+                if (!poi.name) {
+                  poi.name = cleanValue;
+                }
+              } else {
+                // No language tag - fallback if no name exists
+                if (!poi.name) {
+                  poi.name = cleanValue;
+                }
               }
             } else if (fieldName === 'osm_id') {
               poi.osm_id = value;
