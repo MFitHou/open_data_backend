@@ -472,31 +472,63 @@ export class ChatbotService implements OnModuleInit {
     }
 
 
-    async ChatFunctionCalling(contents: string) {
+    async ChatFunctionCalling(contents: string, context?: { currentLocation?: { lat: number; lon: number } }) {
         if(!contents || typeof contents !== 'string'){
             throw new BadRequestException('Invalid input: contents must be a non-empty string');
         }
 
         const toolsDefinition = this.chatToolsRegistry.toolsSchema; 
 
+        // Detect if user wants to use current location
+        const nearMeKeywords = [
+            'near me', 'nearby', 'around me', 'close to me', 'my location', 'where i am',
+            'gần tôi', 'gần đây', 'quanh đây', 'xung quanh tôi', 'gần chỗ tôi', 'vị trí của tôi',
+            'quanh tôi', 'ở đây', 'tại đây', 'khu vực này'
+        ];
+        const lowerContents = contents.toLowerCase();
+        const wantsCurrentLocation = nearMeKeywords.some(keyword => lowerContents.includes(keyword));
+        
+        // Build context string for the AI
+        let contextInfo = '';
+        if (wantsCurrentLocation && context?.currentLocation) {
+            contextInfo = `\n\nCONTEXT: User wants to search near their current location. Current coordinates: lat=${context.currentLocation.lat}, lon=${context.currentLocation.lon}. Use these coordinates directly for searchNearby or searchNearbyWithTopology.`;
+        } else if (wantsCurrentLocation && !context?.currentLocation) {
+            contextInfo = `\n\nCONTEXT: User wants to search near their current location but no coordinates provided. Ask user to enable location services or specify a location name.`;
+        }
+
         try{
             const model = this.genAI.getGenerativeModel({
                 model: "gemini-2.5-flash",
-                systemInstruction: `You are a smart, friendly, and flexible virtual assistant. **Always respond in English**.
-                                    CORE RULES ABOUT USING TOOLS:
-                                    1. **When to use Tools:** 
-                                        - When users send a location name, ask for location information, search for locations, or ask for directions.
-                                        - Prioritize using Wikidata search function to get location information (e.g., coordinates, description, images).
-                                        - Use geocoding function (fetchGeocodeByName) IF AND ONLY IF location information is not found from Wikidata.
-                                    2. **When to use Internal Knowledge:**
-                                        - If users ask about history, culture, definitions, advice, or casual conversation (e.g., "Introduce Hanoi", "What's good to eat in Saigon?"), USE YOUR KNOWLEDGE to answer.
-                                        - DO NOT answer "I don't know" or "I don't have information" just because you can't find a suitable tool. Answer based on what you've been trained on.
-                                    3. **Hybrid Approach:** If you call a tool and receive results (e.g., coordinates), use those results combined with natural language to answer. Don't just return raw data.
-                                    
-                                    RESPONSE STYLE:
-                                    - Always respond in English regardless of the question language.
-                                    - Natural, helpful tone, like a real tour guide.
-                                    - If a tool returns an error or no results, apologize and try to provide relevant suggestions from your knowledge.`,
+                systemInstruction: `You are a smart, friendly, and flexible virtual assistant specialized in location and map services. **Always respond in English**.
+
+LOCATION SEARCH WORKFLOW (CRITICAL):
+When user asks to search for places (restaurants, ATMs, hospitals, etc.):
+
+a) **If user mentions a specific location name** (e.g., "near Hoan Kiem Lake", "in District 1", "at Times City"):
+   → FIRST call fetchGeocodeByName to get coordinates of that location
+   → THEN use those coordinates for searchNearby or searchNearbyWithTopology
+   → Example: "Find ATMs near Hoan Kiem Lake" → fetchGeocodeByName("Hoan Kiem Lake") → searchNearby(lon, lat, types=['atm'])
+
+b) **If user uses "near me" keywords** (gần tôi, nearby, around me, quanh đây, etc.):
+   → Use the currentLocation coordinates from context (will be provided if available)
+   → If no currentLocation provided, ask user to enable location or specify a place name
+   → Example: "Find restaurants near me" → searchNearby(context.lon, context.lat, types=['restaurant'])
+
+c) **If user doesn't specify any location AND doesn't use "near me" keywords**:
+   → ASK the user: "Where would you like me to search? Please specify a location or say 'near me' to use your current location."
+   → DO NOT assume any default location
+
+TOOL SELECTION:
+- **searchNearbyWithTopology**: Use when query has relationship pattern "find A near/in/with B" (e.g., "restaurants near charging stations")
+- **searchNearby**: Use for simple searches (e.g., "find ATMs", "show cafes")
+- **fetchGeocodeByName**: Use to get coordinates of a named location BEFORE searching
+- **Wikidata tools**: Use for location information (history, description, images)
+
+RESPONSE STYLE:
+- Always respond in English regardless of input language
+- Be friendly and helpful like a tour guide
+- When presenting search results, mention the search center location
+- Include useful details like distance, type, and topology relationships`,
                 generationConfig: {
                     temperature: 0.3,
                 },
@@ -506,7 +538,9 @@ export class ChatbotService implements OnModuleInit {
             });
 
             const chat = model.startChat();
-            let result = await chat.sendMessage(contents);
+            // Include context info in the message if available
+            const messageWithContext = contents + contextInfo;
+            let result = await chat.sendMessage(messageWithContext);
             let response = result.response;
             let functionCalls = response.functionCalls();
             let functionResult : any[] = [];

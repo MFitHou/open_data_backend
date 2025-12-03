@@ -48,9 +48,10 @@ export class ChatbotController {
     }
 
     @Post('testFC')
-    async testFC(@Body('contents') contents: string) {
+    async testFC(@Body() body: { contents: string; context?: { currentLocation?: { lat: number; lon: number } } }) {
          try {
-            const result = await this.chatbotService.ChatFunctionCalling(contents);
+            const { contents, context } = body;
+            const result = await this.chatbotService.ChatFunctionCalling(contents, context);
             return result;
         } catch (error) {
             console.error(error);
