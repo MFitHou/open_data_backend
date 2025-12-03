@@ -1,97 +1,33 @@
-# Nhật ký thay đổi (Changelog)
+# Nhật ký thay đổi
 
-Tất cả các thay đổi đáng chú ý của dự án sẽ được ghi lại trong file này.
+Tất cả các thay đổi đáng chú ý của dự án này sẽ được ghi lại trong file này.
 
 Định dạng dựa trên [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-và dự án này tuân theo [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+và dự án này tuân thủ [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] - 2025 - 10 -04
+## Chưa phát hành
 
-### Đã sửa
-- Sửa lỗi gửi request tới Fuseki server
-- Cải thiện xử lý lỗi trong Fuseki service
+### 📝 Các thay đổi khác
+- update changelog ([@honganhss](https://github.com/honganhss) in [49fe134](https://github.com/MFitHou/OpenDataFitHou/commit/49fe1345b7cc5037004645b3e93415fed0aecd7f))
+## 0.1.1
 
-### Đã thay đổi
-- Cập nhật .env.example với cấu hình Fuseki đầy đủ hơn
-- Cải thiện API query bằng SPARQL từ client
+### 📝 Các thay đổi khác
+- update Changelog ([@honganhss](https://github.com/honganhss) in [f1a9923](https://github.com/MFitHou/OpenDataFitHou/commit/f1a99234a1054129a16c76b8dc14a186f81a975e))
+- Merge branch 'main' of https://github.com/VNgKhanh04/open_data_backend ([@VNgKhanh04](https://github.com/VNgKhanh04) in [a425f8d](https://github.com/MFitHou/OpenDataFitHou/commit/a425f8d63cbdfcba52e252855f812fdd6d066dfb))
+- Fix gửi request tới Fuseki ([@VNgKhanh04](https://github.com/VNgKhanh04) in [63a1be1](https://github.com/MFitHou/OpenDataFitHou/commit/63a1be1d048865271f553b4c813d5b37d0574728))
+## 0.1.0
 
-## [0.1.0] - 2025-10-03
-
-### Đã thêm
-- Thiết lập dự án NestJS ban đầu
-- Cấu trúc ứng dụng cơ bản với các module chính
-- Module tích hợp Fuseki cho SPARQL queries
-- Hỗ trợ cấu hình môi trường với file .env mẫu
-- Chức năng endpoint ATM
-- Giấy phép MIT
-- Cấu hình dự án cơ bản (TypeScript, ESLint, Jest)
-- Package.json với tất cả dependencies cần thiết
-
-### Hạ tầng
-- Khung dự án với NestJS CLI
-- Thiết lập testing với Jest
-- Cấu hình môi trường phát triển
-- Script build và deployment
-
-### Tài liệu
-- Tài liệu dự án ban đầu
-- Cấu trúc README cơ bản
-
+### 📝 Các thay đổi khác
+- first commit ([@VNgKhanh04](https://github.com/VNgKhanh04) in [daabf35](https://github.com/MFitHou/OpenDataFitHou/commit/daabf350c49e472d7ec2e17e7d3f20bd32c53789))
+- Thêm example cho env ([@VNgKhanh04](https://github.com/VNgKhanh04) in [4d9bcd3](https://github.com/MFitHou/OpenDataFitHou/commit/4d9bcd391d2396ff251c63a8944b34bf1ddc8fb7))
+- Update thêm endpoint lấy các điểm ATM ([@VNgKhanh04](https://github.com/VNgKhanh04) in [8d518ce](https://github.com/MFitHou/OpenDataFitHou/commit/8d518cef18a1ccc100d1141787f7d4cc625afe24))
+- Cải thiện API query bằng SPARQL từ client ([@VNgKhanh04](https://github.com/VNgKhanh04) in [2d833f2](https://github.com/MFitHou/OpenDataFitHou/commit/2d833f2a3357e581a9af49e892b31a9727cda910))
+- Create LICENSE ([@Vũ Hoàng Anh](https://github.com/Vũ Hoàng Anh) in [65baa97](https://github.com/MFitHou/OpenDataFitHou/commit/65baa971e1010c76c0a2715e3c2ef1dd173c58aa))
+- add giấy phép ([@VuHoangAnh2110](https://github.com/VuHoangAnh2110) in [f43e0f7](https://github.com/MFitHou/OpenDataFitHou/commit/f43e0f75166e2de58913ad61e323de594544d1fa))
+- Add issue and pull request templates ([@VuHoangAnh2110](https://github.com/VuHoangAnh2110) in [7c0c443](https://github.com/MFitHou/OpenDataFitHou/commit/7c0c443dbf0231d38837ba159885922faf33d051))
+- Create CODE_OF_CONDUCT.md ([@Hồng Ánh](https://github.com/Hồng Ánh) in [3daad44](https://github.com/MFitHou/OpenDataFitHou/commit/3daad44ab61302c1bf56a57ad0b32e293bc981f2))
+- Create CONTRIBUTING.md ([@Hồng Ánh](https://github.com/Hồng Ánh) in [2e8c858](https://github.com/MFitHou/OpenDataFitHou/commit/2e8c8588113f75a9c54340a7454470674d19f3f1))
+- Create SECURITY.md ([@Hồng Ánh](https://github.com/Hồng Ánh) in [fb4bf13](https://github.com/MFitHou/OpenDataFitHou/commit/fb4bf13fc3e7992ddfcf32da52639902e4affb1a))
+- update readme + script set up auto ([@honganhss](https://github.com/honganhss) in [09adba0](https://github.com/MFitHou/OpenDataFitHou/commit/09adba0671a74567abf35f400ee573b0216e38df))
 ---
-
-## Ghi chú phiên bản
-
-### Cập nhật gần đây (2025-10-04)
-- **Sửa lỗi kết nối Fuseki**: Cải thiện xử lý request tới Fuseki server
-- **API SPARQL nâng cao**: Tối ưu hóa query từ phía client
-- **Cấu hình môi trường**: Bổ sung thêm biến môi trường trong .env.example
-- **Xử lý lỗi**: Cải thiện error handling trong Fuseki service
-
-### Phiên bản 0.1.0 (Phát hành đầu tiên - 2025-10-03)
-- **Phiên bản ổn định đầu tiên** của Open Data Backend
-- Cung cấp **API cơ bản** cho xử lý dữ liệu mở
-- Tích hợp **Apache Jena Fuseki** để xử lý SPARQL queries
-- **Endpoint ATM** để lấy thông tin các điểm ATM
-- Hỗ trợ **cấu hình môi trường** linh hoạt
-- **Kiểm thử tự động** với Jest framework
-
-### Thiết lập phát triển
-- Hỗ trợ **Node.js** 18+
-- Cấu hình **TypeScript**
-- **ESLint** và **Prettier** để đảm bảo chất lượng code
-- **Hot reload** trong chế độ phát triển
-- Tối ưu hóa **Production build**
-
-
----
-## Lộ trình phát triển
-
-### Đã hoàn thành gần đây
-- [x] Cải thiện API SPARQL queries
-- [x] Sửa lỗi kết nối Fuseki server
-- [x] Tối ưu hóa error handling
-- [x] Cập nhật cấu hình môi trường
-
-### Tính năng dự kiến
-- [ ] Tích hợp cơ sở dữ liệu
-- [ ] Hệ thống xác thực
-- [ ] Tài liệu API với Swagger
-- [ ] Container hóa Docker  
-- [ ] Thiết lập CI/CD pipeline
-- [ ] Giám sát hiệu suất
-- [ ] Triển khai caching
-- [ ] Giới hạn tốc độ truy cập
-
-### Phiên bản 0.1.1 (Sắp tới)
-- Unit tests toàn diện cho Fuseki module
-- Validation cho SPARQL queries
-- Logging system
-- API documentation cơ bản
-
-### Phiên bản 0.2.0 (Tương lai)
-- Tài liệu API đầy đủ với Swagger
-- Performance monitoring
-- Caching layer
-
-
----
+*Changelog được tạo tự động bởi [git-cliff](https://git-cliff.org). Xem hướng dẫn tại [docs/GIT_CLIFF_GUIDE.md](docs/GIT_CLIFF_GUIDE.md)*
