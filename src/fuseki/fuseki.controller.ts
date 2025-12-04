@@ -23,18 +23,6 @@ import { SparqlQueryDto } from './dto/SparqlQueryDto';
 export class FusekiController {
   constructor(private readonly fusekiService: FusekiService) {}
 
-  @Get('atms')
-  async getAllATMs() {
-    try {
-      const rows = await this.fusekiService.queryAllATMs();
-      return { count: rows.length, data: rows };
-    } catch (e: any) {
-      throw new HttpException(
-        { message: 'Query Fuseki failed', error: e.message },
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-  }
 
   @Post('query')
   async runQuery(@Body('query') query?: SparqlQueryDto['query']) {

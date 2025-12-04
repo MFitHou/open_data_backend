@@ -197,8 +197,7 @@ export class SmartSearchService {
           center,
           radiusKm
         },
-        results: nearbyResults,
-        suggestions: this.rankSuggestions(nearbyResults).slice(0, 5)
+        results: nearbyResults
       };
     }
 

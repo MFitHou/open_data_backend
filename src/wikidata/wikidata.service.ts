@@ -74,7 +74,7 @@ export class WikidataService {
     if (ids.length === 0) return {};
     
     const allIds = ids.slice(0, 450);
-    const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&props=labels&ids=${allIds.join('|')}&languages=en&format=json&origin=*`;
+    const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&props=labels&ids=${allIds.join('|')}&languages=vi&format=json&origin=*`;
     
     try {
       const res = await fetch(url);
@@ -83,7 +83,7 @@ export class WikidataService {
       
       if (json.entities) {
         Object.entries(json.entities).forEach(([id, entity]: any) => {
-          out[id] = entity.labels?.en?.value || id;
+          out[id] = entity.labels?.vi?.value || id;
         });
       }
       
@@ -130,7 +130,7 @@ export class WikidataService {
 
       const info: WikidataInfo = {
         label: labels[qid] || qid,
-        description: entity.descriptions?.en?.value,
+        description: entity.descriptions?.vi?.value,
         claims: entity.claims,
         allProperties: {},
         propertyUrls: {},
@@ -230,7 +230,7 @@ export class WikidataService {
 
   @ChatTool({
     name: 'searchInforByName',
-    description: 'Search for places on Wikidata based on keywords and return a list of results with detailed information.',
+    description: 'Tìm kiếm địa điểm trên Wikidata dựa trên từ khóa và trả về danh sách kết quả với thông tin chi tiết.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -252,14 +252,14 @@ export class WikidataService {
         WHERE {
           ?place wdt:P17 wd:Q881 .
           
-          SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+          SERVICE wikibase:label { bd:serviceParam wikibase:language "vi". }
           
           ?place rdfs:label ?placeLabel .
           FILTER(CONTAINS(LCASE(?placeLabel), LCASE("${query}")))
           
           ?place wdt:P625 ?coord .
           
-          OPTIONAL { ?place wdt:P31 ?instanceOf . ?instanceOf rdfs:label ?instanceOfLabel . FILTER(LANG(?instanceOfLabel) = "en") }
+          OPTIONAL { ?place wdt:P31 ?instanceOf . ?instanceOf rdfs:label ?instanceOfLabel . FILTER(LANG(?instanceOfLabel) = "vi") }
           OPTIONAL { ?place wdt:P18 ?image }
           OPTIONAL { ?place wdt:P571 ?inception }
           OPTIONAL { ?place wdt:P1082 ?population }
@@ -274,7 +274,7 @@ export class WikidataService {
           OPTIONAL { ?place wdt:P10689 ?osmWay }
           OPTIONAL { ?place wdt:P214 ?viaf }
           OPTIONAL { ?place wdt:P227 ?gnd }
-          OPTIONAL { ?place schema:description ?placeDescription . FILTER(LANG(?placeDescription) = "en") }
+          OPTIONAL { ?place schema:description ?placeDescription . FILTER(LANG(?placeDescription) = "vi") }
         }
         LIMIT ${limit}
       `;

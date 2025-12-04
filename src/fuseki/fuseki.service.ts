@@ -19,6 +19,7 @@ import { Injectable, Logger, OnModuleInit, BadRequestException } from "@nestjs/c
 import { ConfigService } from "@nestjs/config";
 import { ChatTool } from "src/common/decorators/chat-tools.decorator";
 import { SchemaType } from "@google/generative-ai";
+import { classifyPoiType, parseTypeFromUri } from "src/common/poi-types";
 
 @Injectable()
 export class FusekiService implements OnModuleInit {
@@ -71,32 +72,12 @@ export class FusekiService implements OnModuleInit {
     return data;
   }
 
-  async queryAllATMs() {
-    // Nếu chưa xác định graphUri: đọc toàn bộ triple (cẩn trọng nếu dataset lớn)
-    const query = this.graphUri
-      ? `
-        SELECT ?s ?p ?o
-        WHERE {
-          GRAPH <${this.graphUri}> { ?s ?p ?o }
-        } LIMIT 1000
-      `
-      : `
-        SELECT ?s ?p ?o
-        WHERE { ?s ?p ?o }
-        LIMIT 500
-      `;
-
-    const rows = await this.runSelect(query);
-    this.logger.log(`Triples fetched: ${rows.length}`);
-    return rows;
-  }
-
   async getPOIsByType(params: {
     type: string;
     limit?: number;
     language?: string;
   }) {
-    const { language = 'en' } = params;
+    const { language = 'vi' } = params;
     const type = this.convertToSchemaType(params.type);
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 2000);
 
@@ -160,8 +141,8 @@ export class FusekiService implements OnModuleInit {
           # Lấy tất cả types
           OPTIONAL { ?s a ?type . }
 
-          # Chọn tên theo thứ tự ưu tiên: Anh -> Việt -> Gốc -> "Không tên"
-          BIND(COALESCE(?name_en, ?name_vi, ?name_raw, "Unknown Name") AS ?finalName)
+          # Chọn tên theo thứ tự ưu tiên: Việt -> Anh -> Gốc -> "Không tên"
+          BIND(COALESCE(?name_vi, ?name_en, ?name_raw, "Unknown Name") AS ?finalName)
           
           # Parse tọa độ từ WKT POINT(lon lat)
           BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$1") AS ?lonStr)
@@ -174,8 +155,7 @@ export class FusekiService implements OnModuleInit {
       LIMIT ${limit}
     `;
 
-    this.logger.log(`Executing query for type ${type}:`);
-    this.logger.log(query);
+    this.logger.debug(`Executing query for type ${type}:`);
 
     const rows = await this.runSelect(query);
     this.logger.log(`Found ${rows.length} POIs of type ${type}`);
@@ -190,31 +170,8 @@ export class FusekiService implements OnModuleInit {
       const typesString = row.types || '';
       const types = typesString.split(',').filter((t: string) => t.trim());
       
-
       const typeKey = params.type.toLowerCase();
-      let amenity: string | undefined;
-      let highway: string | undefined;
-      let leisure: string | undefined;
-      
-      const amenityTypes = ['atm', 'bank', 'restaurant', 'cafe', 'hospital', 'school', 
-                            'pharmacy', 'police', 'fire_station', 'parking', 'fuel', 
-                            'supermarket', 'library', 'charging_station', 'convenience_store',
-                            'post_office', 'kindergarten', 'university', 'toilet', 'toilets',
-                            'public_toilet', 'community_center', 'marketplace', 'warehouse',
-                            'drinking_water', 'waste_basket'];
-      const highwayTypes = ['bus_stop'];
-      const leisureTypes = ['park', 'playground'];
-      
-      if (amenityTypes.includes(typeKey)) {
-        amenity = typeKey === 'public_toilet' ? 'toilets' : typeKey;
-      } else if (highwayTypes.includes(typeKey)) {
-        highway = typeKey;
-      } else if (leisureTypes.includes(typeKey)) {
-        leisure = typeKey;
-      } else {
-        // Fallback to amenity
-        amenity = typeKey;
-      }
+      const { amenity, highway, leisure } = classifyPoiType(typeKey);
 
       return {
         poi: row.s || `poi_${Math.random()}`,
@@ -223,11 +180,213 @@ export class FusekiService implements OnModuleInit {
         lon,
         wkt: row.wkt || `POINT(${lon} ${lat})`,
         distanceKm: 0, // No distance calculation for browse mode
-        amenity,
-        highway,
-        leisure,
+        amenity: amenity || undefined,
+        highway: highway || undefined,
+        leisure: leisure || undefined,
+        topology: [] as any[],
       };
     });
+
+    // Fetch topology relationships cho tất cả POIs
+    if (results.length > 0) {
+      const poiUris = results.map(r => `<${r.poi}>`).join(' ');
+      const topologyGraphUri = this.configService.get<string>('FUSEKI_GRAPH_TOPOLOGY') || 'http://localhost:3030/graph/topology';
+      
+      // Xác định language tag ưu tiên
+      const langPriority = language === 'vi' ? ['vi', 'en', ''] : ['en', 'vi', ''];
+      
+      const topologyQuery = `
+        PREFIX schema: <http://schema.org/>
+        PREFIX ext: <http://opendatafithou.org/def/extension/>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        
+        SELECT ?poi ?predicate ?related ?relatedName ?relatedWkt ?relatedAmenity ?relatedHighway ?relatedLeisure ?relatedBrand ?relatedOperator
+        WHERE {
+          # Tìm mối quan hệ trong graph Topology - CẢ 2 CHIỀU
+          GRAPH <${topologyGraphUri}> {
+            VALUES ?poi { ${poiUris} }
+            {
+              # Chiều 1: poi -> related
+              ?poi schema:isNextTo ?related .
+              BIND("isNextTo" AS ?predicate)
+            } UNION {
+              # Chiều 2: related -> poi (đảo ngược)
+              ?related schema:isNextTo ?poi .
+              BIND("isNextTo" AS ?predicate)
+            } UNION {
+              ?poi schema:containedInPlace ?related .
+              BIND("containedInPlace" AS ?predicate)
+            } UNION {
+              ?related schema:containedInPlace ?poi .
+              BIND("containedInPlace" AS ?predicate)
+            } UNION {
+              ?poi schema:amenityFeature ?related .
+              BIND("amenityFeature" AS ?predicate)
+            } UNION {
+              ?related schema:amenityFeature ?poi .
+              BIND("amenityFeature" AS ?predicate)
+            } UNION {
+              ?poi ext:healthcareNetwork ?related .
+              BIND("healthcareNetwork" AS ?predicate)
+            } UNION {
+              ?related ext:healthcareNetwork ?poi .
+              BIND("healthcareNetwork" AS ?predicate)
+            } UNION {
+              ?poi schema:campusAmenity ?related .
+              BIND("campusAmenity" AS ?predicate)
+            } UNION {
+              ?related schema:campusAmenity ?poi .
+              BIND("campusAmenity" AS ?predicate)
+            }
+          }
+          
+          # Tìm thông tin tên của địa điểm liên quan với ưu tiên ngôn ngữ
+          OPTIONAL {
+            GRAPH ?gName1 {
+              ?related schema:name ?relatedName_${langPriority[0]} .
+              FILTER(LANG(?relatedName_${langPriority[0]}) = "${langPriority[0]}" || LANG(?relatedName_${langPriority[0]}) = "")
+            }
+          }
+          OPTIONAL {
+            GRAPH ?gName2 {
+              ?related schema:name ?relatedName_${langPriority[1]} .
+              FILTER(LANG(?relatedName_${langPriority[1]}) = "${langPriority[1]}")
+            }
+          }
+          OPTIONAL {
+            GRAPH ?gLabel {
+              ?related rdfs:label ?relatedName_label .
+              FILTER(LANG(?relatedName_label) = "${langPriority[0]}" || LANG(?relatedName_label) = "")
+            }
+          }
+          
+          # Chọn tên theo thứ tự ưu tiên
+          BIND(COALESCE(?relatedName_${langPriority[0]}, ?relatedName_${langPriority[1]}, ?relatedName_label) AS ?relatedName)
+          
+          # Lấy tọa độ của địa điểm liên quan
+          OPTIONAL {
+            GRAPH ?g2 {
+              ?related geo:asWKT ?relatedWkt .
+            }
+          }
+          
+          # Lấy loại địa điểm liên quan
+          OPTIONAL {
+            GRAPH ?g3 {
+              ?related ext:amenity ?relatedAmenity .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g4 {
+              ?related ext:highway ?relatedHighway .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g5 {
+              ?related ext:leisure ?relatedLeisure .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g6 {
+              ?related schema:brand ?relatedBrand .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g7 {
+              ?related schema:operator ?relatedOperator .
+            }
+          }
+        }
+      `;
+      
+      try {
+        this.logger.debug(`[getPOIsByType] Topology query POI URIs count: ${results.length}`);
+        this.logger.debug(`[getPOIsByType] Topology query: ${topologyQuery.substring(0, 500)}...`);
+        const topologyRows = await this.runSelect(topologyQuery);
+        this.logger.debug(`[getPOIsByType] Topology rows returned: ${topologyRows.length}`);
+        if (topologyRows.length > 0) {
+          this.logger.debug(`[getPOIsByType] First topology row: ${JSON.stringify(topologyRows[0])}`);
+          this.logger.debug(`[getPOIsByType] Sample related URI: ${topologyRows[0].related}`);
+        } else {
+          this.logger.warn(`[getPOIsByType] No topology rows found! Check if topology graph exists.`);
+        }
+        const topologyMap = new Map<string, any[]>();
+        
+        // Track duplicates using a Set with composite key: poi + predicate + related
+        const seenTopology = new Set<string>();
+        
+        topologyRows.forEach(row => {
+          // Create unique key to detect duplicates
+          const uniqueKey = `${row.poi}|${row.predicate}|${row.related}`;
+          
+          // Skip if already seen (duplicate)
+          if (seenTopology.has(uniqueKey)) {
+            return;
+          }
+          seenTopology.add(uniqueKey);
+          
+          if (!topologyMap.has(row.poi)) {
+            topologyMap.set(row.poi, []);
+          }
+          
+          // Parse WKT để lấy tọa độ
+          let relatedLat: number | null = null;
+          let relatedLon: number | null = null;
+          if (row.relatedWkt) {
+            const wktMatch = row.relatedWkt.match(/POINT\s*\(\s*([\d.\-]+)\s+([\d.\-]+)\s*\)/i);
+            if (wktMatch) {
+              relatedLon = parseFloat(wktMatch[1]);
+              relatedLat = parseFloat(wktMatch[2]);
+            }
+          }
+          
+          // Parse type từ URI nếu không có trong data
+          // URI format: urn:ngsi-ld:PointOfInterest:Hanoi:<type>:<id>
+          let parsedAmenity = row.relatedAmenity || null;
+          let parsedHighway = row.relatedHighway || null;
+          let parsedLeisure = row.relatedLeisure || null;
+          
+          if (!parsedAmenity && !parsedHighway && !parsedLeisure && row.related) {
+            const parsed = parseTypeFromUri(row.related);
+            if (parsed) {
+              parsedAmenity = parsed.amenity;
+              parsedHighway = parsed.highway;
+              parsedLeisure = parsed.leisure;
+            }
+          }
+          
+          // Tạo object topology với đầy đủ thông tin
+          const topologyItem: any = {
+            predicate: row.predicate,
+            related: {
+              poi: row.related,
+              name: row.relatedName || null,
+              lat: relatedLat,
+              lon: relatedLon,
+              wkt: row.relatedWkt || null,
+              amenity: parsedAmenity,
+              highway: parsedHighway,
+              leisure: parsedLeisure,
+              brand: row.relatedBrand || null,
+              operator: row.relatedOperator || null,
+            },
+          };
+          
+          topologyMap.get(row.poi)!.push(topologyItem);
+        });
+        
+        // Gán topology vào results
+        results.forEach(r => {
+          r.topology = topologyMap.get(r.poi) || [];
+        });
+        
+        this.logger.debug(`Found topology relationships for ${topologyMap.size} POIs (after deduplication)`);
+      } catch (e: any) {
+        this.logger.warn('Failed to fetch topology for getPOIsByType: ' + e.message);
+      }
+    }
 
     return {
       count: results.length,
@@ -258,7 +417,7 @@ export class FusekiService implements OnModuleInit {
 
   @ChatTool({
     name: 'searchNearby',
-    description: 'Tìm các POI (điểm quan tâm) gần vị trí kinh độ/vĩ độ cho trước. Hỗ trợ 27+ loại dịch vụ: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Có thể tìm nhiều loại cùng lúc.',
+    description: 'Tìm các POI (điểm quan tâm) gần vị trí kinh độ/vĩ độ cho trước. Hỗ trợ 27+ loại dịch vụ: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Có thể tìm nhiều loại cùng lúc. Tự động bao gồm thông tin topology relationships (địa điểm liên quan).',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -266,9 +425,8 @@ export class FusekiService implements OnModuleInit {
         lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
         radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
         types: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Danh sách loại dịch vụ cần tìm (atm, hospital, school, cafe, bus_stop, playground, restaurant, charging_station, etc.). Để trống để tìm tất cả.' },
-        includeTopology: { type: SchemaType.BOOLEAN, description: 'Bao gồm thông tin topology relationships (isNextTo, containedInPlace, amenityFeature). Mặc định: true. Rất hữu ích để tìm địa điểm liên quan như "quán ăn gần trạm sạc".' },
         includeIoT: { type: SchemaType.BOOLEAN, description: 'Bao gồm thông tin trạm cảm biến IoT phủ sóng. Mặc định: false.' },
-        limit: { type: SchemaType.NUMBER, description: 'Số POI tối đa trả về (mặc định 200)' },
+        limit: { type: SchemaType.NUMBER, description: 'Số POI tối đa trả về (mặc định 150)' },
       },
       required: ['lon', 'lat', 'radiusKm'],
     },
@@ -290,11 +448,11 @@ export class FusekiService implements OnModuleInit {
     ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
     if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
 
-    const limit = Math.min(Math.max(params.limit ?? 200, 1), 2000);
+    const limit = Math.min(Math.max(params.limit ?? 100, 1), 100);
     
-    // Mặc định bật topology và IoT cho chatbot (trừ khi explicitly set false)
-    const includeTopology = params.includeTopology !== false; // Default: true
-    const includeIoT = params.includeIoT === true;            // Default: false
+    // Luôn bật topology cho tất cả queries, IoT tùy chọn
+    const includeTopology = true; // Always true
+    const includeIoT = params.includeIoT === true; // Default: false
 
     // Bounding box
     const deltaLat = radiusKm / 111;
@@ -454,8 +612,8 @@ export class FusekiService implements OnModuleInit {
     
     this.logger.debug(`Found ${rows.length} raw results from SPARQL query`);
 
-    // Xác định ngôn ngữ mong muốn (mặc định: 'en')
-    const language = (params.language || 'en').toLowerCase();
+    // Xác định ngôn ngữ mong muốn (mặc định: 'vi')
+    const language = (params.language || 'vi').toLowerCase();
     this.logger.debug(`Language preference: ${language}`);
 
     // Deduplicate POIs - ưu tiên ngôn ngữ được chỉ định
@@ -554,8 +712,9 @@ export class FusekiService implements OnModuleInit {
         PREFIX schema: <http://schema.org/>
         PREFIX ext: <http://opendatafithou.org/def/extension/>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
         
-        SELECT ?poi ?predicate ?related ?relatedName
+        SELECT ?poi ?predicate ?related ?relatedName ?relatedWkt
         WHERE {
           # Tìm mối quan hệ trong graph Topology
           GRAPH <${topologyGraphUri}> {
@@ -588,6 +747,13 @@ export class FusekiService implements OnModuleInit {
               }
             }
           }
+          
+          # Lấy tọa độ của địa điểm liên quan
+          OPTIONAL {
+            GRAPH ?g2 {
+              ?related geo:asWKT ?relatedWkt .
+            }
+          }
         }
       `;
       
@@ -599,10 +765,33 @@ export class FusekiService implements OnModuleInit {
           if (!topologyMap.has(row.poi)) {
             topologyMap.set(row.poi, []);
           }
+          
+          // Parse WKT để lấy tọa độ
+          let relatedLat: number | null = null;
+          let relatedLon: number | null = null;
+          if (row.relatedWkt) {
+            const wktMatch = row.relatedWkt.match(/POINT\s*\(\s*([\d.\-]+)\s+([\d.\-]+)\s*\)/i);
+            if (wktMatch) {
+              relatedLon = parseFloat(wktMatch[1]);
+              relatedLat = parseFloat(wktMatch[2]);
+            }
+          }
+          
+          // Parse type từ URI
+          const parsed = row.related ? parseTypeFromUri(row.related) : null;
+          
           topologyMap.get(row.poi)!.push({
             predicate: row.predicate,
-            related: row.related,
-            relatedName: row.relatedName || null,
+            related: {
+              poi: row.related,
+              name: row.relatedName || null,
+              lat: relatedLat,
+              lon: relatedLon,
+              wkt: row.relatedWkt || null,
+              amenity: parsed?.amenity || null,
+              highway: parsed?.highway || null,
+              leisure: parsed?.leisure || null,
+            },
           });
         });
         
@@ -858,19 +1047,21 @@ export class FusekiService implements OnModuleInit {
     this.logger.debug(`Topology query found ${topologyRows.length} relationships between ${targetResults.count} ${targetType} and ${relatedResults.count} [${relatedTypes.join(', ')}]`);
     
     if (topologyRows.length === 0) {
-      this.logger.warn(`No topology relationships found between ${targetType} and [${relatedTypes.join(', ')}] in this area. Returning all ${targetType} without filtering.`);
+      this.logger.warn(`No topology relationships found between ${targetType} and [${relatedTypes.join(', ')}] in this area. Returning ${targetType} without topology filter.`);
       
-      // Trả về tất cả target POIs (không filter) vì không có topology data
+      // Trả về kết quả target type kèm thông báo không tìm thấy mối quan hệ topology
       return {
         center: { lon, lat },
         radiusKm,
         targetType,
         relatedTypes,
         relationship,
+        noTopologyFound: true,
+        message: `Không tìm thấy mối quan hệ "${relationship}" giữa ${targetType} và ${relatedTypes.join(', ')} trong khu vực này. Dưới đây là danh sách ${targetType} tìm được trong bán kính ${radiusKm}km.`,
         count: targetResults.count,
         items: targetResults.items.slice(0, limit).map(item => ({
           ...item,
-          relatedEntities: [], // Không có related entities
+          relatedEntities: [], // Không có related entities vì không có topology
         })),
       };
     }
