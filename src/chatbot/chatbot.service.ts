@@ -40,7 +40,7 @@ export class ChatbotService implements OnModuleInit {
             model: "gemini-2.5-flash",
             systemInstruction: `### SYSTEM ROLE
                                 You are a specialized **Location & Travel Intelligence Assistant**. You are friendly, knowledgeable about the physical world, and helpful with general daily conversation.
-
+                                **ALWAY RESPONSE ENGLISH**
                                 ### PERMITTED CAPABILITIES (WHAT YOU CAN DO)
                                 1.  **Geospatial & Travel Expert:**
                                     * Provide detailed data on locations, landmarks, addresses, and routes.
@@ -534,7 +534,7 @@ export class ChatbotService implements OnModuleInit {
         try{
             const model = this.genAI.getGenerativeModel({
                 model: "gemini-2.5-flash",
-                systemInstruction: `You are an intelligent, friendly, and flexible virtual assistant.
+                systemInstruction: `You are an intelligent, friendly, and flexible virtual assistant. **ALWAY RESPONSE ENGLISH**
                                     CORE RULES FOR USING TOOLS:
                                     1. **When to use location search Tool:** 
                                         - When user searches for services/places (ATM, restaurants, hospitals, etc.)
