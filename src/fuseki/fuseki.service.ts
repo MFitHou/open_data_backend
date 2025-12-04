@@ -16,6 +16,7 @@
  */
 
 import { Injectable, Logger, OnModuleInit, BadRequestException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { ChatTool } from "src/common/decorators/chat-tools.decorator";
 import { SchemaType } from "@google/generative-ai";
 
@@ -23,16 +24,21 @@ import { SchemaType } from "@google/generative-ai";
 export class FusekiService implements OnModuleInit {
   private readonly logger = new Logger(FusekiService.name);
 
-  // Đọc từ .env
-  private readonly queryEndpoint =
-    process.env.FUSEKI_QUERY_ENDPOINT ||
-    `${process.env.FUSEKI_BASE_URL}/${process.env.FUSEKI_DATASET}/sparql`;
+  private readonly queryEndpoint: string;
+  private readonly updateEndpoint: string;
+  private readonly graphUri: string;
 
-  private readonly updateEndpoint =
-    process.env.FUSEKI_UPDATE_ENDPOINT ||
-    `${process.env.FUSEKI_BASE_URL}/${process.env.FUSEKI_DATASET}/update`;
-
-  private readonly graphUri = "http://localhost:3030/graph/atm";
+  constructor(private configService: ConfigService) {
+    this.queryEndpoint = 
+      this.configService.get<string>('FUSEKI_QUERY_ENDPOINT') ||
+      `${this.configService.get<string>('FUSEKI_BASE_URL')}/${this.configService.get<string>('FUSEKI_DATASET')}/sparql`;
+    
+    this.updateEndpoint = 
+      this.configService.get<string>('FUSEKI_UPDATE_ENDPOINT') ||
+      `${this.configService.get<string>('FUSEKI_BASE_URL')}/${this.configService.get<string>('FUSEKI_DATASET')}/update`;
+    
+    this.graphUri = this.configService.get<string>('FUSEKI_GRAPH_ATM') || "http://localhost:3030/graph/atm";
+  }
 
   async onModuleInit() {
     try {
@@ -50,10 +56,11 @@ export class FusekiService implements OnModuleInit {
 
   async listGraphs() {
     const q = `
-      SELECT * FROM ${this.graphUri}
+      SELECT DISTINCT ?g (COUNT(*) as ?count)
       WHERE {
-        
+        GRAPH ?g { ?s ?p ?o }
       } 
+      GROUP BY ?g
       LIMIT 50
     `;
     const data = await this.runSelect(q);
@@ -84,6 +91,151 @@ export class FusekiService implements OnModuleInit {
     return rows;
   }
 
+  async getPOIsByType(params: {
+    type: string;
+    limit?: number;
+    language?: string;
+  }) {
+    const { language = 'en' } = params;
+    const type = this.convertToSchemaType(params.type);
+    const limit = Math.min(Math.max(params.limit ?? 100, 1), 2000);
+
+    // Map type to graph URI
+    const typeToGraphMap: Record<string, string> = {
+      'atm': this.configService.get<string>('FUSEKI_GRAPH_ATM') || 'http://localhost:3030/graph/atm',
+      'bank': this.configService.get<string>('FUSEKI_GRAPH_BANK') || 'http://localhost:3030/graph/bank',
+      'restaurant': this.configService.get<string>('FUSEKI_GRAPH_RESTAURANT') || 'http://localhost:3030/graph/restaurant',
+      'cafe': this.configService.get<string>('FUSEKI_GRAPH_CAFE') || 'http://localhost:3030/graph/cafe',
+      'hospital': this.configService.get<string>('FUSEKI_GRAPH_HOSPITAL') || 'http://localhost:3030/graph/hospital',
+      'school': this.configService.get<string>('FUSEKI_GRAPH_SCHOOL') || 'http://localhost:3030/graph/school',
+      'bus_stop': this.configService.get<string>('FUSEKI_GRAPH_BUS_STOP') || 'http://localhost:3030/graph/bus-stop',
+      'park': this.configService.get<string>('FUSEKI_GRAPH_PARK') || 'http://localhost:3030/graph/park',
+      'charging_station': this.configService.get<string>('FUSEKI_GRAPH_CHARGING_STATION') || 'http://localhost:3030/graph/charging-station',
+      'pharmacy': this.configService.get<string>('FUSEKI_GRAPH_PHARMACY') || 'http://localhost:3030/graph/pharmacy',
+      'police': this.configService.get<string>('FUSEKI_GRAPH_POLICE') || 'http://localhost:3030/graph/police',
+      'fire_station': this.configService.get<string>('FUSEKI_GRAPH_FIRE_STATION') || 'http://localhost:3030/graph/fire-station',
+      'parking': this.configService.get<string>('FUSEKI_GRAPH_PARKING') || 'http://localhost:3030/graph/parking',
+      'fuel_station': this.configService.get<string>('FUSEKI_GRAPH_FUEL_STATION') || 'http://localhost:3030/graph/fuel-station',
+      'supermarket': this.configService.get<string>('FUSEKI_GRAPH_SUPERMARKET') || 'http://localhost:3030/graph/supermarket',
+      'library': this.configService.get<string>('FUSEKI_GRAPH_LIBRARY') || 'http://localhost:3030/graph/library',
+    };
+
+    const graphUri = typeToGraphMap[params.type.toLowerCase()];
+    if (!graphUri) {
+      throw new BadRequestException(`Unknown POI type: ${type}`);
+    }
+
+    this.logger.debug(`Fetching POIs of type: ${type} from graph: ${graphUri}`);
+
+    const query = `
+      PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+      PREFIX schema: <http://schema.org/>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+      SELECT ?s ?finalName ?lat ?lon (GROUP_CONCAT(DISTINCT ?type; separator=",") AS ?types)
+      WHERE {
+        GRAPH <${graphUri}> {
+          ?s a schema:${type} .
+          ?s geo:asWKT ?wkt .
+
+          # Thử tìm tên tiếng Anh
+          OPTIONAL { 
+            ?s schema:name ?name_en . 
+            FILTER(lang(?name_en) = "en") 
+          }
+
+          # Thử tìm tên tiếng Việt
+          OPTIONAL { 
+            ?s schema:name ?name_vi . 
+            FILTER(lang(?name_vi) = "vi") 
+          }
+
+          # Thử tìm tên không có tag ngôn ngữ (dự phòng)
+          OPTIONAL { 
+            ?s schema:name ?name_raw . 
+            FILTER(lang(?name_raw) = "") 
+          }
+
+          # Lấy tất cả types
+          OPTIONAL { ?s a ?type . }
+
+          # Chọn tên theo thứ tự ưu tiên: Anh -> Việt -> Gốc -> "Không tên"
+          BIND(COALESCE(?name_en, ?name_vi, ?name_raw, "Unknown Name") AS ?finalName)
+          
+          # Parse tọa độ từ WKT POINT(lon lat)
+          BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$1") AS ?lonStr)
+          BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$2") AS ?latStr)
+          BIND(xsd:double(?lonStr) AS ?lon)
+          BIND(xsd:double(?latStr) AS ?lat)
+        }
+      }
+      GROUP BY ?s ?finalName ?lat ?lon
+      LIMIT ${limit}
+    `;
+
+    this.logger.log(`Executing query for type ${type}:`);
+    this.logger.log(query);
+
+    const rows = await this.runSelect(query);
+    this.logger.log(`Found ${rows.length} POIs of type ${type}`);
+
+    // Transform results
+    const results = rows.map((row: any) => {
+      const finalName = row.finalName || 'Unknown';
+      const lat = parseFloat(row.lat || '0');
+      const lon = parseFloat(row.lon || '0');
+
+      // Parse types
+      const typesString = row.types || '';
+      const types = typesString.split(',').filter((t: string) => t.trim());
+      
+
+      const typeKey = params.type.toLowerCase();
+      let amenity: string | undefined;
+      let highway: string | undefined;
+      let leisure: string | undefined;
+      
+      const amenityTypes = ['atm', 'bank', 'restaurant', 'cafe', 'hospital', 'school', 
+                            'pharmacy', 'police', 'fire_station', 'parking', 'fuel', 
+                            'supermarket', 'library', 'charging_station', 'convenience_store',
+                            'post_office', 'kindergarten', 'university', 'toilet', 'toilets',
+                            'public_toilet', 'community_center', 'marketplace', 'warehouse',
+                            'drinking_water', 'waste_basket'];
+      const highwayTypes = ['bus_stop'];
+      const leisureTypes = ['park', 'playground'];
+      
+      if (amenityTypes.includes(typeKey)) {
+        amenity = typeKey === 'public_toilet' ? 'toilets' : typeKey;
+      } else if (highwayTypes.includes(typeKey)) {
+        highway = typeKey;
+      } else if (leisureTypes.includes(typeKey)) {
+        leisure = typeKey;
+      } else {
+        // Fallback to amenity
+        amenity = typeKey;
+      }
+
+      return {
+        poi: row.s || `poi_${Math.random()}`,
+        name: finalName,
+        lat,
+        lon,
+        wkt: row.wkt || `POINT(${lon} ${lat})`,
+        distanceKm: 0, // No distance calculation for browse mode
+        amenity,
+        highway,
+        leisure,
+      };
+    });
+
+    return {
+      count: results.length,
+      type,
+      results,
+    };
+  }
+
   // PUBLIC: thực thi SELECT do client cung cấp
   async executeSelect(query: string) {
     if (!query || !query.trim()) {
@@ -104,13 +256,32 @@ export class FusekiService implements OnModuleInit {
     return this.runSelect(cleaned);
  }
 
-  // Tìm POI gần (default graph)
+  @ChatTool({
+    name: 'searchNearby',
+    description: 'Tìm các POI (điểm quan tâm) gần vị trí kinh độ/vĩ độ cho trước. Hỗ trợ 27+ loại dịch vụ: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Có thể tìm nhiều loại cùng lúc.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        types: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Danh sách loại dịch vụ cần tìm (atm, hospital, school, cafe, bus_stop, playground, restaurant, charging_station, etc.). Để trống để tìm tất cả.' },
+        includeTopology: { type: SchemaType.BOOLEAN, description: 'Bao gồm thông tin topology relationships (isNextTo, containedInPlace, amenityFeature). Mặc định: true. Rất hữu ích để tìm địa điểm liên quan như "quán ăn gần trạm sạc".' },
+        includeIoT: { type: SchemaType.BOOLEAN, description: 'Bao gồm thông tin trạm cảm biến IoT phủ sóng. Mặc định: false.' },
+        limit: { type: SchemaType.NUMBER, description: 'Số POI tối đa trả về (mặc định 200)' },
+      },
+      required: ['lon', 'lat', 'radiusKm'],
+    },
+  })
   async searchNearby(params: {
     lon: number;
     lat: number;
     radiusKm: number;
-    amenities?: string[];   // vd ['atm','school']
-    limit?: number;         // số POI tối đa trả về (sau lọc khoảng cách)
+    types?: string[];          // Danh sách loại dịch vụ (atm, hospital, school, cafe, bus_stop, playground, etc.)
+    includeTopology?: boolean; // thêm thông tin topology relationships
+    includeIoT?: boolean;      // thêm thông tin IoT coverage
+    limit?: number;
+    language?: string;         // Ngôn ngữ: 'vi', 'en', 'all' (mặc định: 'vi')
   }) {
     const { lon, lat, radiusKm } = params;
     if (
@@ -120,548 +291,335 @@ export class FusekiService implements OnModuleInit {
     if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
 
     const limit = Math.min(Math.max(params.limit ?? 200, 1), 2000);
+    
+    // Mặc định bật topology và IoT cho chatbot (trừ khi explicitly set false)
+    const includeTopology = params.includeTopology !== false; // Default: true
+    const includeIoT = params.includeIoT === true;            // Default: false
 
-    // Độ lệch (degree) cho bounding box sơ bộ
-    const deltaLat = radiusKm / 111; // ~111km mỗi 1 độ vĩ
+    // Bounding box
+    const deltaLat = radiusKm / 111;
     const radLat = lat * Math.PI / 180;
     const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
-
     const minLat = lat - deltaLat;
     const maxLat = lat + deltaLat;
     const minLon = lon - deltaLon;
     const maxLon = lon + deltaLon;
 
-    let amenityFilter = '';
-    const amenities = (params.amenities || []).map(a => a.trim().toLowerCase()).filter(Boolean);
-    if (amenities.length > 0) {
-      // tạo list "atm","school",...
-      const amenityIn = amenities.map(a => `"${a}"`).join(',');
-      amenityFilter = `FILTER(LCASE(STR(?amenity)) IN (${amenityIn}))`;
+    const types = (params.types || []).map(t => t.trim().toLowerCase()).filter(Boolean);
+    
+    // Map types to graph URIs (hỗ trợ cả số ít và số nhiều)
+    const typeToGraphMap: Record<string, string> = {
+      'atm': this.configService.get<string>('FUSEKI_GRAPH_ATM') || 'http://localhost:3030/graph/atm',
+      'atms': this.configService.get<string>('FUSEKI_GRAPH_ATM') || 'http://localhost:3030/graph/atm',
+      'hospital': this.configService.get<string>('FUSEKI_GRAPH_HOSPITAL') || 'http://localhost:3030/graph/hospital',
+      'hospitals': this.configService.get<string>('FUSEKI_GRAPH_HOSPITAL') || 'http://localhost:3030/graph/hospital',
+      'school': this.configService.get<string>('FUSEKI_GRAPH_SCHOOL') || 'http://localhost:3030/graph/school',
+      'schools': this.configService.get<string>('FUSEKI_GRAPH_SCHOOL') || 'http://localhost:3030/graph/school',
+      'playground': this.configService.get<string>('FUSEKI_GRAPH_PLAYGROUND') || 'http://localhost:3030/graph/playground',
+      'playgrounds': this.configService.get<string>('FUSEKI_GRAPH_PLAYGROUND') || 'http://localhost:3030/graph/playground',
+      'toilet': this.configService.get<string>('FUSEKI_GRAPH_TOILET') || 'http://localhost:3030/graph/toilet',
+      'toilets': this.configService.get<string>('FUSEKI_GRAPH_TOILET') || 'http://localhost:3030/graph/toilet',
+      'bus_stop': this.configService.get<string>('FUSEKI_GRAPH_BUS_STOP') || 'http://localhost:3030/graph/bus-stop',
+      'bus-stop': this.configService.get<string>('FUSEKI_GRAPH_BUS_STOP') || 'http://localhost:3030/graph/bus-stop',
+      'bus_stops': this.configService.get<string>('FUSEKI_GRAPH_BUS_STOP') || 'http://localhost:3030/graph/bus-stop',
+      'bus-stops': this.configService.get<string>('FUSEKI_GRAPH_BUS_STOP') || 'http://localhost:3030/graph/bus-stop',
+      'drinking_water': this.configService.get<string>('FUSEKI_GRAPH_DRINKING_WATER') || 'http://localhost:3030/graph/drinking-water',
+      'drinking-water': this.configService.get<string>('FUSEKI_GRAPH_DRINKING_WATER') || 'http://localhost:3030/graph/drinking-water',
+      'bank': this.configService.get<string>('FUSEKI_GRAPH_BANK') || 'http://localhost:3030/graph/bank',
+      'banks': this.configService.get<string>('FUSEKI_GRAPH_BANK') || 'http://localhost:3030/graph/bank',
+      'cafe': this.configService.get<string>('FUSEKI_GRAPH_CAFE') || 'http://localhost:3030/graph/cafe',
+      'cafes': this.configService.get<string>('FUSEKI_GRAPH_CAFE') || 'http://localhost:3030/graph/cafe',
+      'restaurant': this.configService.get<string>('FUSEKI_GRAPH_RESTAURANT') || 'http://localhost:3030/graph/restaurant',
+      'restaurants': this.configService.get<string>('FUSEKI_GRAPH_RESTAURANT') || 'http://localhost:3030/graph/restaurant',
+      'police': this.configService.get<string>('FUSEKI_GRAPH_POLICE') || 'http://localhost:3030/graph/police',
+      'fire_station': this.configService.get<string>('FUSEKI_GRAPH_FIRE_STATION') || 'http://localhost:3030/graph/fire-station',
+      'fire-station': this.configService.get<string>('FUSEKI_GRAPH_FIRE_STATION') || 'http://localhost:3030/graph/fire-station',
+      'fire_stations': this.configService.get<string>('FUSEKI_GRAPH_FIRE_STATION') || 'http://localhost:3030/graph/fire-station',
+      'post_office': this.configService.get<string>('FUSEKI_GRAPH_POST_OFFICE') || 'http://localhost:3030/graph/post-office',
+      'post-office': this.configService.get<string>('FUSEKI_GRAPH_POST_OFFICE') || 'http://localhost:3030/graph/post-office',
+      'post_offices': this.configService.get<string>('FUSEKI_GRAPH_POST_OFFICE') || 'http://localhost:3030/graph/post-office',
+      'library': this.configService.get<string>('FUSEKI_GRAPH_LIBRARY') || 'http://localhost:3030/graph/library',
+      'libraries': this.configService.get<string>('FUSEKI_GRAPH_LIBRARY') || 'http://localhost:3030/graph/library',
+      'community_center': this.configService.get<string>('FUSEKI_GRAPH_COMMUNITY_CENTER') || 'http://localhost:3030/graph/community-center',
+      'community-center': this.configService.get<string>('FUSEKI_GRAPH_COMMUNITY_CENTER') || 'http://localhost:3030/graph/community-center',
+      'community_centers': this.configService.get<string>('FUSEKI_GRAPH_COMMUNITY_CENTER') || 'http://localhost:3030/graph/community-center',
+      'marketplace': this.configService.get<string>('FUSEKI_GRAPH_MARKETPLACE') || 'http://localhost:3030/graph/marketplace',
+      'marketplaces': this.configService.get<string>('FUSEKI_GRAPH_MARKETPLACE') || 'http://localhost:3030/graph/marketplace',
+      'parking': this.configService.get<string>('FUSEKI_GRAPH_PARKING') || 'http://localhost:3030/graph/parking',
+      'parkings': this.configService.get<string>('FUSEKI_GRAPH_PARKING') || 'http://localhost:3030/graph/parking',
+      'fuel_station': this.configService.get<string>('FUSEKI_GRAPH_FUEL_STATION') || 'http://localhost:3030/graph/fuel-station',
+      'fuel-station': this.configService.get<string>('FUSEKI_GRAPH_FUEL_STATION') || 'http://localhost:3030/graph/fuel-station',
+      'fuel_stations': this.configService.get<string>('FUSEKI_GRAPH_FUEL_STATION') || 'http://localhost:3030/graph/fuel-station',
+      'charging_station': this.configService.get<string>('FUSEKI_GRAPH_CHARGING_STATION') || 'http://localhost:3030/graph/charging-station',
+      'charging-station': this.configService.get<string>('FUSEKI_GRAPH_CHARGING_STATION') || 'http://localhost:3030/graph/charging-station',
+      'charging_stations': this.configService.get<string>('FUSEKI_GRAPH_CHARGING_STATION') || 'http://localhost:3030/graph/charging-station',
+      'pharmacy': this.configService.get<string>('FUSEKI_GRAPH_PHARMACY') || 'http://localhost:3030/graph/pharmacy',
+      'pharmacies': this.configService.get<string>('FUSEKI_GRAPH_PHARMACY') || 'http://localhost:3030/graph/pharmacy',
+      'supermarket': this.configService.get<string>('FUSEKI_GRAPH_SUPERMARKET') || 'http://localhost:3030/graph/supermarket',
+      'supermarkets': this.configService.get<string>('FUSEKI_GRAPH_SUPERMARKET') || 'http://localhost:3030/graph/supermarket',
+      'convenience_store': this.configService.get<string>('FUSEKI_GRAPH_CONVENIENCE_STORE') || 'http://localhost:3030/graph/convenience-store',
+      'convenience-store': this.configService.get<string>('FUSEKI_GRAPH_CONVENIENCE_STORE') || 'http://localhost:3030/graph/convenience-store',
+      'convenience_stores': this.configService.get<string>('FUSEKI_GRAPH_CONVENIENCE_STORE') || 'http://localhost:3030/graph/convenience-store',
+      'kindergarten': this.configService.get<string>('FUSEKI_GRAPH_KINDERGARTEN') || 'http://localhost:3030/graph/kindergarten',
+      'kindergartens': this.configService.get<string>('FUSEKI_GRAPH_KINDERGARTEN') || 'http://localhost:3030/graph/kindergarten',
+      'university': this.configService.get<string>('FUSEKI_GRAPH_UNIVERSITY') || 'http://localhost:3030/graph/university',
+      'universities': this.configService.get<string>('FUSEKI_GRAPH_UNIVERSITY') || 'http://localhost:3030/graph/university',
+      'warehouse': this.configService.get<string>('FUSEKI_GRAPH_WAREHOUSE') || 'http://localhost:3030/graph/warehouse',
+      'warehouses': this.configService.get<string>('FUSEKI_GRAPH_WAREHOUSE') || 'http://localhost:3030/graph/warehouse',
+      'park': this.configService.get<string>('FUSEKI_GRAPH_PARK') || 'http://localhost:3030/graph/park',
+      'parks': this.configService.get<string>('FUSEKI_GRAPH_PARK') || 'http://localhost:3030/graph/park',
+      'waste_basket': this.configService.get<string>('FUSEKI_GRAPH_WASTE_BASKET') || 'http://localhost:3030/graph/waste-basket',
+      'waste-basket': this.configService.get<string>('FUSEKI_GRAPH_WASTE_BASKET') || 'http://localhost:3030/graph/waste-basket',
+      'waste_baskets': this.configService.get<string>('FUSEKI_GRAPH_WASTE_BASKET') || 'http://localhost:3030/graph/waste-basket',
+    };
+    
+    // Determine which graphs to query
+    let graphUris: string[] = [];
+    if (types.length > 0) {
+      graphUris = types.map(t => typeToGraphMap[t]).filter(g => g);
+      if (graphUris.length === 0) {
+        this.logger.warn(`No graphs found for types: ${types.join(', ')}`);
+        return { center: { lon, lat }, radiusKm, count: 0, items: [] };
+      }
+    } else {
+      graphUris = Object.values(typeToGraphMap);
+    }
+    
+    this.logger.debug(`Querying ${graphUris.length} graphs for types: ${types.join(', ') || 'all'}`);
+    
+    // Build UNION of GRAPH clauses - mỗi graph query riêng biệt hoàn toàn
+    const graphClauses = graphUris.map(uri => `{
+        GRAPH <${uri}> {
+          ?poi geo:asWKT ?wkt .
+          OPTIONAL { ?poi ext:amenity ?amenity . }
+          OPTIONAL { ?poi ext:highway ?highway . }
+          OPTIONAL { ?poi ext:leisure ?leisure . }
+          OPTIONAL { ?poi a ?type . }
+          OPTIONAL { ?poi rdfs:label ?labelRaw . }
+          OPTIONAL { ?poi schema:name ?schemaNameRaw . }
+          OPTIONAL { ?poi schema:brand ?brand . }
+          OPTIONAL { ?poi schema:operator ?operator . }
+        }
+      }`).join(' UNION ');
+    
+    // IoT coverage
+    const iotJoin = params.includeIoT ? `
+      OPTIONAL { 
+        GRAPH <${this.configService.get<string>('FUSEKI_GRAPH_IOT_COVERAGE') || 'http://localhost:3030/graph/iot-coverage'}> {
+          ?poi sosa:isSampledBy ?iotStation .
+        }
+      }` : '';
+
+    const query = `
+      PREFIX ext: <http://opendatafithou.org/def/extension/>
+      PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX schema: <http://schema.org/>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX sosa: <http://www.w3.org/ns/sosa/>
+      
+      SELECT ?poi ?name ?amenity ?highway ?leisure ?brand ?operator ?wkt ?lon ?lat
+             (GROUP_CONCAT(DISTINCT ?type; separator=",") AS ?types)
+             (GROUP_CONCAT(DISTINCT ?iotStation; separator=",") AS ?iotStations)
+      WHERE {
+        {
+          SELECT DISTINCT ?poi ?name ?amenity ?highway ?leisure ?brand ?operator ?wkt ?lon ?lat ?type
+          WHERE {
+            ${graphClauses}
+            
+            BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$1") AS ?lonStr)
+            BIND(REPLACE(STR(?wkt), "^[Pp][Oo][Ii][Nn][Tt]\\\\s*\\\\(([0-9.\\\\-]+)\\\\s+([0-9.\\\\-]+).*\\\\)$", "$2") AS ?latStr)
+            BIND(xsd:double(?lonStr) AS ?lon)
+            BIND(xsd:double(?latStr) AS ?lat)
+            
+            # Ưu tiên lấy giá trị tiếng Việt, nếu không có thì lấy giá trị không có language tag, cuối cùng là bất kỳ giá trị nào
+            BIND(IF(BOUND(?schemaNameRaw) && LANG(?schemaNameRaw) = "vi", ?schemaNameRaw,
+                    IF(BOUND(?schemaNameRaw) && LANG(?schemaNameRaw) = "", ?schemaNameRaw, ?schemaNameRaw)) AS ?schemaName)
+            BIND(IF(BOUND(?labelRaw) && LANG(?labelRaw) = "vi", ?labelRaw,
+                    IF(BOUND(?labelRaw) && LANG(?labelRaw) = "", ?labelRaw, ?labelRaw)) AS ?label)
+            BIND(COALESCE(?schemaName, ?label) AS ?name)
+            
+            FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
+            FILTER(BOUND(?wkt))
+          }
+        }
+        
+        ${iotJoin}
+      }
+      GROUP BY ?poi ?name ?amenity ?highway ?leisure ?brand ?operator ?wkt ?lon ?lat
+      LIMIT ${limit * 3}
+    `;
+
+    const rows = await this.runSelect(query);
+    
+    this.logger.debug(`Found ${rows.length} raw results from SPARQL query`);
+
+    // Xác định ngôn ngữ mong muốn (mặc định: 'en')
+    const language = (params.language || 'en').toLowerCase();
+    this.logger.debug(`Language preference: ${language}`);
+
+    // Deduplicate POIs - ưu tiên ngôn ngữ được chỉ định
+    const poiMap = new Map<string, any>();
+    for (const r of rows) {
+      if (!r.lon || !r.lat) continue;
+      
+      // Parse types from GROUP_CONCAT result and map schema.org types to amenity/highway/leisure
+      if (r.types) {
+        const typeArray = r.types.split(',');
+        
+        for (const t of typeArray) {
+          // Map schema.org types to amenity/highway/leisure
+          if (t.includes('schema.org/')) {
+            const schemaType = t.split('/').pop();
+            r.amenity = this.convertFromSchemaType(schemaType);
+          }
+        }
+      }
+      
+      const poiUri = r.poi;
+      
+      // Nếu language='all', không deduplicate, giữ tất cả variants
+      if (language === 'all') {
+        const key = `${poiUri}_${r.name || ''}`;
+        poiMap.set(key, r);
+        continue;
+      }
+      
+      // Kiểm tra ngôn ngữ của tên
+      const hasVietnamese = r.name && (r.name.match(/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i));
+      const hasEnglish = r.name && !hasVietnamese && (r.name.match(/[a-zA-Z]/));
+      
+      const matchesPreference = 
+        (language === 'vi' && hasVietnamese) ||
+        (language === 'en' && hasEnglish) ||
+        (!hasVietnamese && !hasEnglish); // Không xác định được ngôn ngữ
+      
+      if (!poiMap.has(poiUri)) {
+        poiMap.set(poiUri, r);
+      } else {
+        // Nếu POI đã tồn tại, chỉ thay thế nếu bản mới khớp với ngôn ngữ mong muốn hơn
+        const existing = poiMap.get(poiUri);
+        const existingHasVietnamese = existing.name && (existing.name.match(/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i));
+        const existingHasEnglish = existing.name && !existingHasVietnamese && (existing.name.match(/[a-zA-Z]/));
+        
+        const existingMatchesPreference = 
+          (language === 'vi' && existingHasVietnamese) ||
+          (language === 'en' && existingHasEnglish);
+        
+        // Thay thế nếu bản mới khớp với preference mà bản cũ không khớp
+        if (matchesPreference && !existingMatchesPreference) {
+          poiMap.set(poiUri, r);
+        }
+      }
+    }
+    
+    this.logger.debug(`After deduplication: ${poiMap.size} unique POIs`);
+
+    // Process results với Haversine
+    let results = Array.from(poiMap.values())
+      .map(r => {
+        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
+        
+        // Parse iotStations từ GROUP_CONCAT (CSV)
+        const iotStations = r.iotStations 
+          ? r.iotStations.split(',').filter((s: string) => s.trim())
+          : [];
+        
+        return {
+          poi: r.poi,
+          name: r.name || null,
+          amenity: r.amenity || null,
+          highway: r.highway || null,
+          leisure: r.leisure || null,
+          brand: r.brand || null,
+          operator: r.operator || null,
+          wkt: r.wkt || null,
+          lon: parseFloat(r.lon),
+          lat: parseFloat(r.lat),
+          distanceKm: dKm,
+          iotStations: iotStations.length > 0 ? iotStations : null,
+          topology: null as any, // sẽ populate nếu includeTopology=true
+        };
+      })
+      .filter(r => r.distanceKm <= radiusKm)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, limit);
+
+    // Fetch topology relationships nếu được yêu cầu
+    if (includeTopology && results.length > 0) {
+      const poiUris = results.map(r => `<${r.poi}>`).join(' ');
+      const topologyGraphUri = this.configService.get<string>('FUSEKI_GRAPH_TOPOLOGY') || 'http://localhost:3030/graph/topology';
+      
+      const topologyQuery = `
+        PREFIX schema: <http://schema.org/>
+        PREFIX ext: <http://opendatafithou.org/def/extension/>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        
+        SELECT ?poi ?predicate ?related ?relatedName
+        WHERE {
+          # Tìm mối quan hệ trong graph Topology
+          GRAPH <${topologyGraphUri}> {
+            VALUES ?poi { ${poiUris} }
+            {
+              ?poi schema:isNextTo ?related .
+              BIND("isNextTo" AS ?predicate)
+            } UNION {
+              ?poi schema:containedInPlace ?related .
+              BIND("containedInPlace" AS ?predicate)
+            } UNION {
+              ?poi schema:amenityFeature ?related .
+              BIND("amenityFeature" AS ?predicate)
+            } UNION {
+              ?poi ext:healthcareNetwork ?related .
+              BIND("healthcareNetwork" AS ?predicate)
+            } UNION {
+              ?poi schema:campusAmenity ?related .
+              BIND("campusAmenity" AS ?predicate)
+            }
+          }
+          
+          # Tìm tên của địa điểm liên quan (ở bất kỳ graph nào)
+          OPTIONAL {
+            GRAPH ?g {
+              {
+                ?related schema:name ?relatedName .
+              } UNION {
+                ?related rdfs:label ?relatedName .
+              }
+            }
+          }
+        }
+      `;
+      
+      try {
+        const topologyRows = await this.runSelect(topologyQuery);
+        const topologyMap = new Map<string, any[]>();
+        
+        topologyRows.forEach(row => {
+          if (!topologyMap.has(row.poi)) {
+            topologyMap.set(row.poi, []);
+          }
+          topologyMap.get(row.poi)!.push({
+            predicate: row.predicate,
+            related: row.related,
+            relatedName: row.relatedName || null,
+          });
+        });
+        
+        results = results.map(r => ({
+          ...r,
+          topology: topologyMap.get(r.poi) || [],
+        }));
+      } catch (e: any) {
+        this.logger.warn('Failed to fetch topology: ' + e.message);
+      }
     }
 
-    const query = `
-      PREFIX ex: <http://opendatafithou.org/poi/>
-      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-      SELECT ?poi ?amenity ?brand ?operator ?wkt ?lon ?lat
-      WHERE {
-        ?poi ex:amenity ?amenity .
-        OPTIONAL { ?poi ex:brand ?brand . }
-        OPTIONAL { ?poi ex:operator ?operator . }
-        OPTIONAL {
-          ?poi geo:hasGeometry ?g .
-          ?g geo:asWKT ?wkt .
-          # Tách lon / lat từ WKT POINT(lon lat)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
-          BIND(xsd:double(?lonStr) AS ?lon)
-          BIND(xsd:double(?latStr) AS ?lat)
-        }
-        FILTER(BOUND(?wkt))
-        ${amenityFilter}
-        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
-      }
-      LIMIT ${limit * 3}  # lấy rộng hơn, lọc khoảng cách thật ở backend
-    `;
-
-    const rows = await this.runSelect(query);
-
-    // Tính khoảng cách Haversine
-    const results = rows
-      .filter(r => r.lon && r.lat)
-      .map(r => {
-        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
-        return {
-          poi: r.poi,
-          amenity: r.amenity || null,
-          brand: r.brand || null,
-          operator: r.operator || null,
-          wkt: r.wkt || null,
-          lon: parseFloat(r.lon),
-          lat: parseFloat(r.lat),
-          distanceKm: dKm,
-        };
-      })
-      .filter(r => r.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-
     return {
       center: { lon, lat },
       radiusKm,
       count: results.length,
-      items: results
-    };
-  }
-
-  @ChatTool({
-    name: 'searchPlaygroundsNearby',
-    description: 'Tìm sân chơi gần vị trí kinh độ/vĩ độ cho trước',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        limit: { type: SchemaType.NUMBER, description: 'Số sân chơi tối đa trả về' },
-      },
-      required: ['lon', 'lat', 'radiusKm'],
-    },
-  })
-
-  // Tìm playground gần
-  async searchPlaygroundsNearby(params: {
-    lon: number;
-    lat: number;
-    radiusKm: number;
-    limit?: number;
-  }) {
-    const { lon, lat, radiusKm } = params;
-    if (
-      lon === undefined || lat === undefined ||
-      Number.isNaN(lon) || Number.isNaN(lat)
-    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
-    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
-
-    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
-
-    // Bounding box
-    const deltaLat = radiusKm / 111;
-    const radLat = lat * Math.PI / 180;
-    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
-    const minLat = lat - deltaLat;
-    const maxLat = lat + deltaLat;
-    const minLon = lon - deltaLon;
-    const maxLon = lon + deltaLon;
-
-    const query = `
-      PREFIX ex: <http://opendatafithou.org/poi/>
-      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      
-      SELECT ?poi ?leisure ?name ?wkt ?lon ?lat
-      WHERE {
-        ?poi ex:leisure "playground" .
-        OPTIONAL { ?poi rdfs:label ?name . }
-        OPTIONAL {
-          ?poi geo:hasGeometry ?g .
-          ?g geo:asWKT ?wkt .
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
-          BIND(xsd:double(?lonStr) AS ?lon)
-          BIND(xsd:double(?latStr) AS ?lat)
-        }
-        FILTER(BOUND(?wkt))
-        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
-      }
-      LIMIT ${limit * 3}
-    `;
-
-    const rows = await this.runSelect(query);
-
-    const results = rows
-      .filter(r => r.lon && r.lat)
-      .map(r => {
-        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
-        return {
-          poi: r.poi,
-          leisure: 'playground',
-          name: r.name || null,
-          wkt: r.wkt || null,
-          lon: parseFloat(r.lon),
-          lat: parseFloat(r.lat),
-          distanceKm: dKm,
-        };
-      })
-      .filter(r => r.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-
-    return {
-      center: { lon, lat },
-      radiusKm,
-      count: results.length,
-      items: results
-    };
-  }
-
-  @ChatTool({
-    name: 'searchHospitalsNearby',
-    description: 'Tìm bệnh viện gần vị trí kinh độ/vĩ độ cho trước',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        limit: { type: SchemaType.NUMBER, description: 'Số bệnh viện tối đa trả về' },
-      },
-      required: ['lon', 'lat', 'radiusKm'],
-    },
-  })
-
-  // Tìm bệnh viện gần
-  async searchHospitalsNearby(params: {
-    lon: number;
-    lat: number;
-    radiusKm: number;
-    limit?: number;
-  }) {
-    const { lon, lat, radiusKm } = params;
-    if (
-      lon === undefined || lat === undefined ||
-      Number.isNaN(lon) || Number.isNaN(lat)
-    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
-    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
-
-    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
-
-    // Bounding box
-    const deltaLat = radiusKm / 111;
-    const radLat = lat * Math.PI / 180;
-    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
-    const minLat = lat - deltaLat;
-    const maxLat = lat + deltaLat;
-    const minLon = lon - deltaLon;
-    const maxLon = lon + deltaLon;
-
-    const query = `
-      PREFIX ex: <http://opendatafithou.org/poi/>
-      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      
-      SELECT ?poi ?amenity ?name ?operator ?wkt ?lon ?lat
-      WHERE {
-        ?poi ex:amenity ?amenity .
-        FILTER(LCASE(STR(?amenity)) = "hospital")
-        OPTIONAL { ?poi rdfs:label ?name . }
-        OPTIONAL { ?poi ex:operator ?operator . }
-        OPTIONAL {
-          ?poi geo:hasGeometry ?g .
-          ?g geo:asWKT ?wkt .
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
-          BIND(xsd:double(?lonStr) AS ?lon)
-          BIND(xsd:double(?latStr) AS ?lat)
-        }
-        FILTER(BOUND(?wkt))
-        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
-      }
-      LIMIT ${limit * 3}
-    `;
-
-    const rows = await this.runSelect(query);
-
-    const results = rows
-      .filter(r => r.lon && r.lat)
-      .map(r => {
-        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
-        return {
-          poi: r.poi,
-          amenity: r.amenity || 'hospital',
-          name: r.name || null,
-          operator: r.operator || null,
-          wkt: r.wkt || null,
-          lon: parseFloat(r.lon),
-          lat: parseFloat(r.lat),
-          distanceKm: dKm,
-        };
-      })
-      .filter(r => r.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-
-    return {
-      center: { lon, lat },
-      radiusKm,
-      count: results.length,
-      items: results
-    };
-  }
-
-
-  @ChatTool({
-    name: 'searchToiletsNearby',
-    description: 'Tìm nhà vệ sinh gần vị trí kinh độ/vĩ độ cho trước',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        limit: { type: SchemaType.NUMBER, description: 'Số nhà vệ sinh tối đa trả về' },
-      },
-      required: ['lon', 'lat', 'radiusKm'],
-    },
-  })
-
-  // Tìm nhà vệ sinh gần
-  async searchToiletsNearby(params: {
-    lon: number;
-    lat: number;
-    radiusKm: number;
-    limit?: number;
-  }) {
-    const { lon, lat, radiusKm } = params;
-    if (
-      lon === undefined || lat === undefined ||
-      Number.isNaN(lon) || Number.isNaN(lat)
-    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
-    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
-
-    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
-
-    // Bounding box
-    const deltaLat = radiusKm / 111;
-    const radLat = lat * Math.PI / 180;
-    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
-    const minLat = lat - deltaLat;
-    const maxLat = lat + deltaLat;
-    const minLon = lon - deltaLon;
-    const maxLon = lon + deltaLon;
-
-    const query = `
-      PREFIX ex: <http://opendatafithou.org/poi/>
-      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      
-      SELECT ?poi ?amenity ?name ?access ?fee ?wkt ?lon ?lat
-      WHERE {
-        ?poi ex:amenity ?amenity .
-        FILTER(LCASE(STR(?amenity)) = "toilets")
-        OPTIONAL { ?poi rdfs:label ?name . }
-        OPTIONAL { ?poi ex:access ?access . }
-        OPTIONAL { ?poi ex:fee ?fee . }
-        OPTIONAL {
-          ?poi geo:hasGeometry ?g .
-          ?g geo:asWKT ?wkt .
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
-          BIND(xsd:double(?lonStr) AS ?lon)
-          BIND(xsd:double(?latStr) AS ?lat)
-        }
-        FILTER(BOUND(?wkt))
-        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
-      }
-      LIMIT ${limit * 3}
-    `;
-
-    const rows = await this.runSelect(query);
-
-    const results = rows
-      .filter(r => r.lon && r.lat)
-      .map(r => {
-        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
-        return {
-          poi: r.poi,
-          amenity: r.amenity || 'toilets',
-          name: r.name || null,
-          access: r.access || null,
-          fee: r.fee || null,
-          wkt: r.wkt || null,
-          lon: parseFloat(r.lon),
-          lat: parseFloat(r.lat),
-          distanceKm: dKm,
-        };
-      })
-      .filter(r => r.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-
-    return {
-      center: { lon, lat },
-      radiusKm,
-      count: results.length,
-      items: results
-    };
-  }
-
-  @ChatTool({
-    name: 'searchBusStopsNearby',
-    description: 'Tìm trạm xe buýt gần vị trí kinh độ/vĩ độ cho trước',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        limit: { type: SchemaType.NUMBER, description: 'Số trạm xe buýt tối đa trả về' },
-      },
-      required: ['lon', 'lat', 'radiusKm'],
-    },
-  })
-
-  // Tìm trạm xe buýt gần
-  async searchBusStopsNearby(params: {
-    lon: number;
-    lat: number;
-    radiusKm: number;
-    limit?: number;
-  }) {
-    const { lon, lat, radiusKm } = params;
-    if (
-      lon === undefined || lat === undefined ||
-      Number.isNaN(lon) || Number.isNaN(lat)
-    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
-    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
-
-    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
-
-    // Bounding box
-    const deltaLat = radiusKm / 111;
-    const radLat = lat * Math.PI / 180;
-    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
-    const minLat = lat - deltaLat;
-    const maxLat = lat + deltaLat;
-    const minLon = lon - deltaLon;
-    const maxLon = lon + deltaLon;
-
-    const query = `
-      PREFIX ex: <http://opendatafithou.org/poi/>
-      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      
-      SELECT ?poi ?highway ?name ?wkt ?lon ?lat
-      WHERE {
-        ?poi ex:highway ?highway .
-        FILTER(LCASE(STR(?highway)) = "bus_stop")
-        OPTIONAL { ?poi rdfs:label ?name . }
-        OPTIONAL {
-          ?poi geo:hasGeometry ?g .
-          ?g geo:asWKT ?wkt .
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
-          BIND(xsd:double(?lonStr) AS ?lon)
-          BIND(xsd:double(?latStr) AS ?lat)
-        }
-        FILTER(BOUND(?wkt))
-        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
-      }
-      LIMIT ${limit * 3}
-    `;
-
-    const rows = await this.runSelect(query);
-
-    const results = rows
-      .filter(r => r.lon && r.lat)
-      .map(r => {
-        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
-        return {
-          poi: r.poi,
-          highway: r.highway || 'bus_stop',
-          name: r.name || null,
-          wkt: r.wkt || null,
-          lon: parseFloat(r.lon),
-          lat: parseFloat(r.lat),
-          distanceKm: dKm,
-        };
-      })
-      .filter(r => r.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-
-    return {
-      center: { lon, lat },
-      radiusKm,
-      count: results.length,
-      items: results
-    };
-  }
-
-  @ChatTool({
-    name: 'searchATMsNearby',
-    description: 'Tìm ATM gần vị trí kinh độ/vĩ độ cho trước',
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        limit: { type: SchemaType.NUMBER, description: 'Số ATM tối đa trả về' },
-      },
-      required: ['lon', 'lat', 'radiusKm'],
-    },
-  })
-  // Tìm ATM gần
-  async searchATMsNearby(params: {
-    lon: number;
-    lat: number;
-    radiusKm: number;
-    limit?: number;
-  }) {
-    const { lon, lat, radiusKm } = params;
-    if (
-      lon === undefined || lat === undefined ||
-      Number.isNaN(lon) || Number.isNaN(lat)
-    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
-    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
-
-    const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
-
-    const deltaLat = radiusKm / 111;
-    const radLat = lat * Math.PI / 180;
-    const deltaLon = radiusKm / (111 * Math.cos(radLat) || 0.00001);
-    const minLat = lat - deltaLat;
-    const maxLat = lat + deltaLat;
-    const minLon = lon - deltaLon;
-    const maxLon = lon + deltaLon;
-
-    const query = `
-      PREFIX ex: <http://opendatafithou.org/poi/>
-      PREFIX geo: <http://www.opendatafithou.net/ont/geosparql#>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      
-      SELECT ?poi ?amenity ?brand ?operator ?wkt ?lon ?lat
-      WHERE {
-        ?poi ex:amenity ?amenity .
-        FILTER(LCASE(STR(?amenity)) = "atm")
-        OPTIONAL { ?poi ex:brand ?brand . }
-        OPTIONAL { ?poi ex:operator ?operator . }
-        OPTIONAL {
-          ?poi geo:hasGeometry ?g .
-          ?g geo:asWKT ?wkt .
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$1") AS ?lonStr)
-          BIND(REPLACE(STR(?wkt), "^POINT\\\\(([^ ]+) ([^)]+)\\\\)$", "$2") AS ?latStr)
-          BIND(xsd:double(?lonStr) AS ?lon)
-          BIND(xsd:double(?latStr) AS ?lat)
-        }
-        FILTER(BOUND(?wkt))
-        FILTER(?lon >= ${minLon} && ?lon <= ${maxLon} && ?lat >= ${minLat} && ?lat <= ${maxLat})
-      }
-      LIMIT ${limit * 3}
-    `;
-
-    const rows = await this.runSelect(query);
-
-    const results = rows
-      .filter(r => r.lon && r.lat)
-      .map(r => {
-        const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
-        return {
-          poi: r.poi,
-          amenity: r.amenity || 'atm',
-          brand: r.brand || null,
-          operator: r.operator || null,
-          wkt: r.wkt || null,
-          lon: parseFloat(r.lon),
-          lat: parseFloat(r.lat),
-          distanceKm: dKm,
-        };
-      })
-      .filter(r => r.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
-
-    return {
-      center: { lon, lat },
-      radiusKm,
-      count: results.length,
-      items: results
+      items: results,
     };
   }
 
@@ -692,8 +650,10 @@ export class FusekiService implements OnModuleInit {
       'Content-Type': 'application/sparql-update',
     };
 
-    if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
-      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+    const fusekiUser = this.configService.get<string>('FUSEKI_USER');
+    const fusekiPass = this.configService.get<string>('FUSEKI_PASS');
+    if (fusekiUser && fusekiPass) {
+      const basic = Buffer.from(`${fusekiUser}:${fusekiPass}`).toString('base64');
       headers['Authorization'] = `Basic ${basic}`;
     }
 
@@ -721,8 +681,10 @@ export class FusekiService implements OnModuleInit {
     //Fuseki yêu cầu xác thực, 
     //nếu không đặt user/pass trên fuseki thì comment phần này
     const headers: Record<string, string> = { Accept: 'application/sparql-results+json' };
-    if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
-      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+    const fusekiUser = this.configService.get<string>('FUSEKI_USER');
+    const fusekiPass = this.configService.get<string>('FUSEKI_PASS');
+    if (fusekiUser && fusekiPass) {
+      const basic = Buffer.from(`${fusekiUser}:${fusekiPass}`).toString('base64');
       headers['Authorization'] = `Basic ${basic}`;
     }
 
@@ -742,5 +704,362 @@ export class FusekiService implements OnModuleInit {
       Object.keys(b).forEach(k => (obj[k] = b[k].value));
       return obj;
     });
+  }
+
+  @ChatTool({
+    name: 'searchNearbyWithTopology',
+    description: 'Tìm địa điểm có quan hệ topology với địa điểm khác. Ví dụ: tìm quán ăn gần trạm sạc, cafe trong công viên, bệnh viện có bãi đỗ xe. Hỗ trợ nhiều loại địa điểm liên quan (relatedTypes có thể là array). Tool này tối ưu cho query kiểu "tìm A gần/trong/có B (và C, D...)". Lưu ý: relationship="isNextTo" (mặc định) bao gồm cả isNextTo và containedInPlace để cover khái niệm "gần".',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        lon: { type: SchemaType.NUMBER, description: 'Kinh độ trung tâm' },
+        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ trung tâm' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
+        targetType: { type: SchemaType.STRING, description: 'Loại địa điểm cần tìm (restaurant, cafe, hospital, school, etc.)' },
+        relatedTypes: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Danh sách loại địa điểm liên quan (charging_station, parking, bus_stop, atm, etc.). Có thể là 1 hoặc nhiều types.' },
+        relationship: { 
+          type: SchemaType.STRING, 
+          description: 'Loại quan hệ: "isNextTo" (bên cạnh), "containedInPlace" (trong khu vực), "amenityFeature" (có tiện ích). Mặc định: "isNextTo"'
+        },
+        limit: { type: SchemaType.NUMBER, description: 'Số kết quả tối đa (mặc định 50)' },
+      },
+      required: ['lon', 'lat', 'radiusKm', 'targetType', 'relatedTypes'],
+    },
+  })
+  async searchNearbyWithTopology(params: {
+    lon: number;
+    lat: number;
+    radiusKm: number;
+    targetType: string;
+    relatedTypes: string[];
+    relationship?: string;
+    limit?: number;
+  }) {
+    const { lon, lat, radiusKm, targetType, relatedTypes } = params;
+    const relationship = params.relationship || 'isNextTo';
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+
+    const relationshipTypes = relationship === 'isNextTo' 
+      ? ['isNextTo', 'containedInPlace']
+      : [relationship];
+    
+    this.logger.debug(`searchNearbyWithTopology: ${targetType} with relationships [${relationshipTypes.join('+')}] to [${relatedTypes.join(', ')}] within ${radiusKm}km`);
+
+    const targetResults = await this.searchNearby({
+      lon, lat, radiusKm,
+      types: [targetType],
+      includeTopology: false,
+      limit: limit * 2, // Query nhiều hơn để sau khi filter còn đủ
+    });
+
+    if (targetResults.count === 0) {
+      this.logger.warn(`No ${targetType} found in radius`);
+      return { 
+        center: { lon, lat }, 
+        radiusKm, 
+        targetType,
+        relatedTypes,
+        relationship,
+        count: 0, 
+        items: [] 
+      };
+    }
+
+    const relatedResults = await this.searchNearby({
+      lon, lat, radiusKm,
+      types: relatedTypes,
+      includeTopology: false,
+      limit: 100,
+    });
+
+    if (relatedResults.count === 0) {
+      this.logger.warn(`No [${relatedTypes.join(', ')}] found in radius`);
+      return { 
+        center: { lon, lat }, 
+        radiusKm, 
+        targetType,
+        relatedTypes,
+        relationship,
+        count: 0, 
+        items: [] 
+      };
+    }
+
+    const targetUris = targetResults.items.map(r => `<${r.poi}>`).join(' ');
+    const relatedUris = relatedResults.items.map(r => `<${r.poi}>`).join(' ');
+    const topologyGraphUri = this.configService.get<string>('FUSEKI_GRAPH_TOPOLOGY') || 'http://localhost:3030/graph/topology';
+    
+    // Build query dựa trên relationship
+    let whereClause = '';
+    if (relationship === 'isNextTo') {
+      // "gần" = isNextTo OR containedInPlace
+      whereClause = `
+        {
+          ?targetPoi schema:isNextTo ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:isNextTo ?targetPoi .
+        } UNION {
+          ?targetPoi schema:containedInPlace ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:containedInPlace ?targetPoi .
+        }
+      `;
+    } else if (relationship === 'containedInPlace') {
+      whereClause = `
+        {
+          ?targetPoi schema:containedInPlace ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:containedInPlace ?targetPoi .
+        }
+      `;
+    } else if (relationship === 'amenityFeature') {
+      whereClause = `
+        {
+          ?targetPoi schema:amenityFeature ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:amenityFeature ?targetPoi .
+        }
+      `;
+    } else {
+      // Default: all relationships
+      whereClause = `
+        {
+          ?targetPoi schema:isNextTo ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:isNextTo ?targetPoi .
+        } UNION {
+          ?targetPoi schema:containedInPlace ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:containedInPlace ?targetPoi .
+        } UNION {
+          ?targetPoi schema:amenityFeature ?relatedPoi .
+        } UNION {
+          ?relatedPoi schema:amenityFeature ?targetPoi .
+        }
+      `;
+    }
+
+    const topologyQuery = `
+      PREFIX schema: <http://schema.org/>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      
+      SELECT DISTINCT ?targetPoi ?relatedPoi
+      WHERE {
+        GRAPH <${topologyGraphUri}> {
+          VALUES ?targetPoi { ${targetUris} }
+          VALUES ?relatedPoi { ${relatedUris} }
+          ${whereClause}
+        }
+      }
+    `;
+
+    const topologyRows = await this.runSelect(topologyQuery);
+    
+    this.logger.debug(`Topology query found ${topologyRows.length} relationships between ${targetResults.count} ${targetType} and ${relatedResults.count} [${relatedTypes.join(', ')}]`);
+    
+    if (topologyRows.length === 0) {
+      this.logger.warn(`No topology relationships found between ${targetType} and [${relatedTypes.join(', ')}] in this area. Returning all ${targetType} without filtering.`);
+      
+      // Trả về tất cả target POIs (không filter) vì không có topology data
+      return {
+        center: { lon, lat },
+        radiusKm,
+        targetType,
+        relatedTypes,
+        relationship,
+        count: targetResults.count,
+        items: targetResults.items.slice(0, limit).map(item => ({
+          ...item,
+          relatedEntities: [], // Không có related entities
+        })),
+      };
+    }
+
+    const targetUrisWithTopology = new Set(topologyRows.map(r => r.targetPoi));
+    const filteredItems = targetResults.items.filter(item => targetUrisWithTopology.has(item.poi)).slice(0, limit);
+
+    this.logger.debug(`Filtered down to ${filteredItems.length} ${targetType} with topology relationships`);
+
+    // Enrich với thông tin related entity (đầy đủ thông tin POI)
+    const relatedMap = new Map(relatedResults.items.map(r => [r.poi, r]));
+    const enrichedItems = filteredItems.map(item => {
+      const relatedEntities = topologyRows
+        .filter(r => r.targetPoi === item.poi)
+        .map(r => {
+          const related = relatedMap.get(r.relatedPoi);
+          return related ? {
+            poi: related.poi,
+            name: related.name,
+            amenity: related.amenity || null,
+            highway: related.highway || null,
+            leisure: related.leisure || null,
+            brand: related.brand || null,
+            operator: related.operator || null,
+            wkt: related.wkt,
+            lon: related.lon,
+            lat: related.lat,
+            distanceKm: related.distanceKm,
+          } : {
+            poi: r.relatedPoi,
+            name: null,
+            lon: null,
+            lat: null,
+            distanceKm: null,
+          };
+        });
+
+      return {
+        ...item,
+        relatedEntities,
+      };
+    });
+
+    this.logger.debug(`Found ${enrichedItems.length} ${targetType} with [${relationshipTypes.join('+')}] relationships to [${relatedTypes.join(', ')}]`);
+
+    return {
+      center: { lon, lat },
+      radiusKm,
+      targetType,
+      relatedTypes,
+      relationship,
+      count: enrichedItems.length,
+      items: enrichedItems,
+    };
+  }
+
+
+  private convertToSchemaType(type: string){
+    switch(type){
+      case 'atm':
+        return 'FinancialService';
+      case 'bank':
+        return 'BankOrCreditUnion';
+      case 'bus_stop':
+      case 'bus-stop':
+        return 'BusStop';
+      case 'cafe':
+        return 'CafeOrCoffeeShop';
+      case 'charging_station':
+      case 'charging-station':
+        return 'AutomotiveBusiness';
+      case 'community_center':
+      case 'community-center':
+      case 'community_centre':
+        return 'CommunityCenter';
+      case 'convenience_store':
+      case 'convenience-store':
+        return 'ConvenienceStore';
+      case 'drinking_water':
+      case 'drinking-water':
+        return 'DrinkingWaterDispenser';
+      case 'fire_station':
+      case 'fire-station':
+        return 'FireStation';
+      case 'fuel_station':
+      case 'fuel-station':
+        return 'GasStation';
+      case 'hospital':
+        return 'Hospital';
+      case 'kindergarten':
+        return 'Preschool';
+      case 'library':
+        return 'Library';
+      case 'marketplace':
+        return 'Market';
+      case 'park':
+        return 'Park';
+      case 'parking':
+        return 'ParkingFacility';
+      case 'pharmacy':
+        return 'Pharmacy';
+      case 'playground':
+        return 'Playground';
+      case 'police':
+        return 'PoliceStation';
+      case 'post_office':
+      case 'post-office':
+        return 'PostOffice';
+      case 'restaurant':
+        return 'Restaurant';
+      case 'school':
+        return 'School';
+      case 'supermarket':
+        return 'GroceryStore';
+      case 'toilet':
+      case 'toilets':
+      case 'public_toilet':
+        return 'PublicToilet';
+      case 'university':
+        return 'CollegeOrUniversity';
+      case 'warehouse':
+        return 'Warehouse';
+      case 'waste_basket':
+      case 'waste-basket':
+        return 'WasteContainer';
+      default:
+        return type;
+    }
+  }
+
+  private convertFromSchemaType(type: string){
+    switch(type){
+      case 'FinancialService':
+        return 'atm';
+      case 'BankOrCreditUnion':
+        return 'bank';
+      case 'BusStop':
+        return 'bus_stop';
+      case 'CafeOrCoffeeShop':
+        return 'cafe';
+      case 'AutomotiveBusiness':
+      case 'ChargingStation':
+        return 'charging_station';
+      case 'CommunityCenter':
+        return 'community_center';
+      case 'ConvenienceStore':
+        return 'convenience_store';
+      case 'DrinkingWaterDispenser':
+        return 'drinking_water';
+      case 'FireStation':
+        return 'fire_station';
+      case 'GasStation':
+        return 'fuel';
+      case 'Hospital':
+        return 'hospital';
+      case 'Preschool':
+        return 'kindergarten';
+      case 'Library':
+        return 'library';
+      case 'Market':
+        return 'marketplace';
+      case 'Park':
+        return 'park';
+      case 'ParkingFacility':
+        return 'parking';
+      case 'Pharmacy':
+        return 'pharmacy';
+      case 'Playground':
+        return 'playground';
+      case 'PoliceStation':
+        return 'police';
+      case 'PostOffice':
+        return 'post_office';
+      case 'Restaurant':
+        return 'restaurant';
+      case 'School':
+        return 'school';
+      case 'GroceryStore':
+        return 'supermarket';
+      case 'PublicToilet':
+        return 'toilets';
+      case 'CollegeOrUniversity':
+        return 'university';
+      case 'Warehouse':
+        return 'warehouse';
+      case 'WasteContainer':
+        return 'waste_basket';
+      default:
+        return type;
+    }
   }
 }
