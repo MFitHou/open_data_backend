@@ -395,6 +395,267 @@ export class FusekiService implements OnModuleInit {
     };
   }
 
+  /**
+   * Get full POI information by URI
+   * Used when clicking on a topology related entity to fetch full details
+   */
+  async getPOIByUri(params: { uri: string; language?: string }) {
+    const { uri } = params;
+    const language = params.language || 'vi';
+    
+    if (!uri || !uri.trim()) {
+      throw new BadRequestException('uri is required');
+    }
+    
+    this.logger.debug(`[getPOIByUri] Fetching POI: ${uri}`);
+    
+    // Query để lấy thông tin POI
+    const query = `
+      PREFIX ext: <http://opendatafithou.org/def/extension/>
+      PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX schema: <http://schema.org/>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      
+      SELECT ?name ?amenity ?highway ?leisure ?brand ?operator ?wkt ?access ?fee
+      WHERE {
+        GRAPH ?g {
+          <${uri}> geo:asWKT ?wkt .
+          OPTIONAL { <${uri}> ext:amenity ?amenity . }
+          OPTIONAL { <${uri}> ext:highway ?highway . }
+          OPTIONAL { <${uri}> ext:leisure ?leisure . }
+          OPTIONAL { <${uri}> schema:brand ?brand . }
+          OPTIONAL { <${uri}> schema:operator ?operator . }
+          OPTIONAL { <${uri}> ext:access ?access . }
+          OPTIONAL { <${uri}> ext:fee ?fee . }
+          OPTIONAL { 
+            <${uri}> schema:name ?schemaName .
+            FILTER(LANG(?schemaName) = "${language}" || LANG(?schemaName) = "")
+          }
+          OPTIONAL { 
+            <${uri}> rdfs:label ?label .
+            FILTER(LANG(?label) = "${language}" || LANG(?label) = "")
+          }
+          BIND(COALESCE(?schemaName, ?label) AS ?name)
+        }
+      }
+      LIMIT 1
+    `;
+    
+    try {
+      const rows = await this.runSelect(query);
+      
+      if (rows.length === 0) {
+        this.logger.warn(`[getPOIByUri] POI not found: ${uri}`);
+        return { found: false, poi: null };
+      }
+      
+      const row = rows[0];
+      
+      // Parse WKT to get coordinates
+      let lat: number | null = null;
+      let lon: number | null = null;
+      if (row.wkt) {
+        const wktMatch = row.wkt.match(/POINT\s*\(\s*([\d.\-]+)\s+([\d.\-]+)\s*\)/i);
+        if (wktMatch) {
+          lon = parseFloat(wktMatch[1]);
+          lat = parseFloat(wktMatch[2]);
+        }
+      }
+      
+      // Parse type from URI if not in data
+      let amenity = row.amenity || null;
+      let highway = row.highway || null;
+      let leisure = row.leisure || null;
+      
+      if (!amenity && !highway && !leisure) {
+        const parsed = parseTypeFromUri(uri);
+        if (parsed) {
+          amenity = parsed.amenity;
+          highway = parsed.highway;
+          leisure = parsed.leisure;
+        }
+      }
+      
+      const poiData = {
+        poi: uri,
+        name: row.name || null,
+        amenity,
+        highway,
+        leisure,
+        brand: row.brand || null,
+        operator: row.operator || null,
+        access: row.access || null,
+        fee: row.fee || null,
+        wkt: row.wkt || null,
+        lat,
+        lon,
+        distanceKm: 0,
+        topology: [] as any[],
+      };
+      
+      // Fetch topology for this POI
+      const topologyGraphUri = this.configService.get<string>('FUSEKI_GRAPH_TOPOLOGY') || 'http://localhost:3030/graph/topology';
+      const langPriority = language === 'vi' ? ['vi', 'en', ''] : ['en', 'vi', ''];
+      
+      const topologyQuery = `
+        PREFIX schema: <http://schema.org/>
+        PREFIX ext: <http://opendatafithou.org/def/extension/>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+        
+        SELECT ?predicate ?related ?relatedName ?relatedWkt ?relatedAmenity ?relatedHighway ?relatedLeisure ?relatedBrand ?relatedOperator
+        WHERE {
+          GRAPH <${topologyGraphUri}> {
+            {
+              <${uri}> schema:isNextTo ?related .
+              BIND("isNextTo" AS ?predicate)
+            } UNION {
+              ?related schema:isNextTo <${uri}> .
+              BIND("isNextTo" AS ?predicate)
+            } UNION {
+              <${uri}> schema:containedInPlace ?related .
+              BIND("containedInPlace" AS ?predicate)
+            } UNION {
+              ?related schema:containedInPlace <${uri}> .
+              BIND("containedInPlace" AS ?predicate)
+            } UNION {
+              <${uri}> schema:amenityFeature ?related .
+              BIND("amenityFeature" AS ?predicate)
+            } UNION {
+              ?related schema:amenityFeature <${uri}> .
+              BIND("amenityFeature" AS ?predicate)
+            } UNION {
+              <${uri}> ext:healthcareNetwork ?related .
+              BIND("healthcareNetwork" AS ?predicate)
+            } UNION {
+              ?related ext:healthcareNetwork <${uri}> .
+              BIND("healthcareNetwork" AS ?predicate)
+            } UNION {
+              <${uri}> schema:campusAmenity ?related .
+              BIND("campusAmenity" AS ?predicate)
+            } UNION {
+              ?related schema:campusAmenity <${uri}> .
+              BIND("campusAmenity" AS ?predicate)
+            }
+          }
+          
+          OPTIONAL {
+            GRAPH ?gName1 {
+              ?related schema:name ?relatedName_${langPriority[0]} .
+              FILTER(LANG(?relatedName_${langPriority[0]}) = "${langPriority[0]}" || LANG(?relatedName_${langPriority[0]}) = "")
+            }
+          }
+          OPTIONAL {
+            GRAPH ?gName2 {
+              ?related schema:name ?relatedName_${langPriority[1]} .
+              FILTER(LANG(?relatedName_${langPriority[1]}) = "${langPriority[1]}")
+            }
+          }
+          OPTIONAL {
+            GRAPH ?gLabel {
+              ?related rdfs:label ?relatedName_label .
+              FILTER(LANG(?relatedName_label) = "${langPriority[0]}" || LANG(?relatedName_label) = "")
+            }
+          }
+          BIND(COALESCE(?relatedName_${langPriority[0]}, ?relatedName_${langPriority[1]}, ?relatedName_label) AS ?relatedName)
+          
+          OPTIONAL {
+            GRAPH ?g2 {
+              ?related geo:asWKT ?relatedWkt .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g3 {
+              ?related ext:amenity ?relatedAmenity .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g4 {
+              ?related ext:highway ?relatedHighway .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g5 {
+              ?related ext:leisure ?relatedLeisure .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g6 {
+              ?related schema:brand ?relatedBrand .
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g7 {
+              ?related schema:operator ?relatedOperator .
+            }
+          }
+        }
+      `;
+      
+      try {
+        const topologyRows = await this.runSelect(topologyQuery);
+        const seenTopology = new Set<string>();
+        
+        topologyRows.forEach(tRow => {
+          const uniqueKey = `${tRow.predicate}|${tRow.related}`;
+          if (seenTopology.has(uniqueKey)) return;
+          seenTopology.add(uniqueKey);
+          
+          // Parse WKT
+          let relatedLat: number | null = null;
+          let relatedLon: number | null = null;
+          if (tRow.relatedWkt) {
+            const wktMatch = tRow.relatedWkt.match(/POINT\s*\(\s*([\d.\-]+)\s+([\d.\-]+)\s*\)/i);
+            if (wktMatch) {
+              relatedLon = parseFloat(wktMatch[1]);
+              relatedLat = parseFloat(wktMatch[2]);
+            }
+          }
+          
+          // Parse type from URI
+          let parsedAmenity = tRow.relatedAmenity || null;
+          let parsedHighway = tRow.relatedHighway || null;
+          let parsedLeisure = tRow.relatedLeisure || null;
+          
+          if (!parsedAmenity && !parsedHighway && !parsedLeisure && tRow.related) {
+            const parsed = parseTypeFromUri(tRow.related);
+            if (parsed) {
+              parsedAmenity = parsed.amenity;
+              parsedHighway = parsed.highway;
+              parsedLeisure = parsed.leisure;
+            }
+          }
+          
+          poiData.topology.push({
+            predicate: tRow.predicate,
+            related: {
+              poi: tRow.related,
+              name: tRow.relatedName || null,
+              lat: relatedLat,
+              lon: relatedLon,
+              wkt: tRow.relatedWkt || null,
+              amenity: parsedAmenity,
+              highway: parsedHighway,
+              leisure: parsedLeisure,
+              brand: tRow.relatedBrand || null,
+              operator: tRow.relatedOperator || null,
+            },
+          });
+        });
+        
+        this.logger.debug(`[getPOIByUri] Found ${poiData.topology.length} topology relations`);
+      } catch (e: any) {
+        this.logger.warn(`[getPOIByUri] Failed to fetch topology: ${e.message}`);
+      }
+      
+      return { found: true, poi: poiData };
+    } catch (e: any) {
+      this.logger.error(`[getPOIByUri] Error: ${e.message}`);
+      throw e;
+    }
+  }
+
   // PUBLIC: thực thi SELECT do client cung cấp
   async executeSelect(query: string) {
     if (!query || !query.trim()) {

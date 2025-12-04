@@ -101,4 +101,27 @@ export class FusekiController {
       );
     }
   }
+
+  @Get('poi')
+  async getPOIByUri(
+    @Query('uri') uri?: string,
+    @Query('language') language?: string,
+  ) {
+    try {
+      if (!uri) {
+        throw new BadRequestException('uri parameter is required');
+      }
+      
+      const data = await this.fusekiService.getPOIByUri({
+        uri: uri.trim(),
+        language: language || 'vi',
+      });
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get POI by URI failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
 }
