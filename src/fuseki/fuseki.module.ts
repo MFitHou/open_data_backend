@@ -19,9 +19,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { FusekiService } from './fuseki.service';
 import { FusekiController } from './fuseki.controller';
+import { InfluxDBModule } from '../influxdb/influxdb.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), InfluxDBModule],
   providers: [FusekiService],
   controllers: [FusekiController],
   exports: [FusekiService],

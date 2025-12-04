@@ -16,13 +16,13 @@
  */
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { FusekiService } from '../fuseki/fuseki.service';
+import { AdminFusekiService } from './admin-fuseki.service';
 
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  constructor(private readonly fusekiService: FusekiService) {}
+  constructor(private readonly fusekiService: AdminFusekiService) {}
 
   /**
    * Cache schema của mỗi graph để tránh query lại nhiều lần
@@ -43,10 +43,11 @@ export class AdminService {
     try {
       // Query để lấy tất cả predicates có trong graph
       const query = `
-        PREFIX ex: <http://opendatafithou.org/poi/>
-        PREFIX geo1: <http://www.opendatafithou.net/ont/geosparql#>
+        PREFIX ext: <http://opendatafithou.org/def/extension/>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX schema: <http://schema.org/>
+        PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         
         SELECT DISTINCT ?predicate
         WHERE {
@@ -55,7 +56,6 @@ export class AdminService {
             # Loại bỏ các predicates hệ thống
             FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)
             FILTER(!STRSTARTS(STR(?predicate), "http://www.w3.org/2000/01/rdf-schema#"))
-            FILTER(?predicate != geo1:hasGeometry)
           }
         }
         LIMIT 100
@@ -76,15 +76,61 @@ export class AdminService {
   }
 
   /**
-   * Graph mapping
+   * Graph mapping - Map từ type tới graph URL
+   * Tên type chuẩn hóa theo file TTL (dùng underscore và dấu gạch nối)
+   * Hỗ trợ cả underscore và hyphen format để tương thích
    */
   private getGraphMap(): Record<string, string> {
     return {
-      school: 'http://160.250.5.179:3030/graph/school',
-      'bus-stop': 'http://160.250.5.179:3030/graph/bus-stop',
-      'play-ground': 'http://160.250.5.179:3030/graph/play-ground',
-      'drinking-water': 'http://160.250.5.179:3030/graph/drinking-water',
-      toilet: 'http://160.250.5.179:3030/graph/toilet',
+      // ATM & Banking
+      atm: process.env.FUSEKI_GRAPH_ATM || 'http://localhost:3030/graph/atm',
+      bank: process.env.FUSEKI_GRAPH_BANK || 'http://localhost:3030/graph/bank',
+      
+      // Transport
+      bus_stop: process.env.FUSEKI_GRAPH_BUS_STOP || 'http://localhost:3030/graph/bus_stop',
+      
+      // Food & Drink
+      cafe: process.env.FUSEKI_GRAPH_CAFE || 'http://localhost:3030/graph/cafe',
+      restaurant: process.env.FUSEKI_GRAPH_RESTAURANT || 'http://localhost:3030/graph/restaurant',
+      
+      // Retail
+      convenience_store: process.env.FUSEKI_GRAPH_CONVENIENCE_STORE || 'http://localhost:3030/graph/convenience_store',
+      supermarket: process.env.FUSEKI_GRAPH_SUPERMARKET || 'http://localhost:3030/graph/supermarket',
+      marketplace: process.env.FUSEKI_GRAPH_MARKETPLACE || 'http://localhost:3030/graph/marketplace',
+      warehouse: process.env.FUSEKI_GRAPH_WAREHOUSE || 'http://localhost:3030/graph/warehouse',
+      
+      // Healthcare
+      hospital: process.env.FUSEKI_GRAPH_HOSPITAL || 'http://localhost:3030/graph/hospital',
+      clinic: process.env.FUSEKI_GRAPH_CLINIC || 'http://localhost:3030/graph/clinic',
+      pharmacy: process.env.FUSEKI_GRAPH_PHARMACY || 'http://localhost:3030/graph/pharmacy',
+      
+      // Education
+      school: process.env.FUSEKI_GRAPH_SCHOOL || 'http://localhost:3030/graph/school',
+      university: process.env.FUSEKI_GRAPH_UNIVERSITY || 'http://localhost:3030/graph/university',
+      kindergarten: process.env.FUSEKI_GRAPH_KINDERGARTEN || 'http://localhost:3030/graph/kindergarten',
+      
+      // Recreation
+      playground: process.env.FUSEKI_GRAPH_PLAY_GROUNDS || 'http://localhost:3030/graph/playground',
+      park: process.env.FUSEKI_GRAPH_PARK || 'http://localhost:3030/graph/park',
+      
+      // Infrastructure
+      charging_station: process.env.FUSEKI_GRAPH_CHARGING_STATION || 'http://localhost:3030/graph/charging_station',
+      fuel_station: process.env.FUSEKI_GRAPH_FUEL_STATION || 'http://localhost:3030/graph/fuel_station',
+      parking: process.env.FUSEKI_GRAPH_PARKING || 'http://localhost:3030/graph/parking',
+      
+      // Public Services
+      post_office: process.env.FUSEKI_GRAPH_POST_OFFICE || 'http://localhost:3030/graph/post_office',
+      library: process.env.FUSEKI_GRAPH_LIBRARY || 'http://localhost:3030/graph/library',
+      community_centre: process.env.FUSEKI_GRAPH_COMMUNITY_CENTER || 'http://localhost:3030/graph/community_centre',
+      
+      // Emergency Services
+      police: process.env.FUSEKI_GRAPH_POLICE || 'http://localhost:3030/graph/police',
+      fire_station: process.env.FUSEKI_GRAPH_FIRE_STATION || 'http://localhost:3030/graph/fire_station',
+      
+      // Utilities
+      drinking_water: process.env.FUSEKI_GRAPH_DRINKING_WATER || 'http://localhost:3030/graph/drinking_water',
+      public_toilet: process.env.FUSEKI_GRAPH_TOILETS || 'http://localhost:3030/graph/public_toilet',
+      waste_basket: process.env.FUSEKI_GRAPH_WASTE_BASKET || 'http://localhost:3030/graph/waste_basket',
     };
   }
 
@@ -152,100 +198,62 @@ export class AdminService {
 
   /**
    * Lấy thống kê tổng quan cho dashboard
-   * Đếm số lượng các loại POI trong database
+   * Đếm số lượng các loại POI trong database từ tất cả các graph
    */
   async getDashboardStats() {
     try {
       this.logger.log('Fetching dashboard statistics');
 
-      // Query đếm tổng số ATMs (sử dụng property ex:amenity thay vì type)
-      const atmsQuery = `
-        PREFIX ex: <http://opendatafithou.org/poi/>
+      const graphMap = this.getGraphMap();
+      const breakdown: Record<string, number> = {};
+      let totalPois = 0;
+
+      // Query template để đếm số POI trong một graph
+      const createCountQuery = (graphUrl: string) => `
+        PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         
-        SELECT (COUNT(?poi) AS ?count)
+        SELECT (COUNT(DISTINCT ?poi) AS ?count)
         WHERE {
-          ?poi ex:amenity ?amenity .
-          FILTER(LCASE(STR(?amenity)) = "atm")
+          GRAPH <${graphUrl}> {
+            ?poi a fiware:PointOfInterest .
+          }
         }
       `;
 
-      // Query đếm tổng số hospitals
-      const hospitalsQuery = `
-        PREFIX ex: <http://opendatafithou.org/poi/>
-        
-        SELECT (COUNT(?poi) AS ?count)
-        WHERE {
-          ?poi ex:amenity ?amenity .
-          FILTER(LCASE(STR(?amenity)) = "hospital")
+      // Tạo promises để đếm từng loại POI
+      const countPromises = Object.entries(graphMap).map(async ([type, graphUrl]) => {
+        try {
+          const query = createCountQuery(graphUrl);
+          const results = await this.fusekiService.executeSelect(query);
+          const count = results.length > 0 ? parseInt(results[0].count || '0', 10) : 0;
+          return { type, count };
+        } catch (error) {
+          this.logger.warn(`Failed to count ${type} from ${graphUrl}: ${error.message}`);
+          return { type, count: 0 };
         }
-      `;
+      });
 
-      // Query đếm tổng số toilets
-      const toiletsQuery = `
-        PREFIX ex: <http://opendatafithou.org/poi/>
-        
-        SELECT (COUNT(?poi) AS ?count)
-        WHERE {
-          ?poi ex:amenity ?amenity .
-          FILTER(LCASE(STR(?amenity)) = "toilets")
-        }
-      `;
+      // Thực thi tất cả queries song song
+      const results = await Promise.all(countPromises);
 
-      // Query đếm tổng số bus stops
-      const busStopsQuery = `
-        PREFIX ex: <http://opendatafithou.org/poi/>
-        
-        SELECT (COUNT(?poi) AS ?count)
-        WHERE {
-          ?poi ex:highway ?highway .
-          FILTER(LCASE(STR(?highway)) = "bus_stop")
-        }
-      `;
-
-      // Thực thi các queries
-      const [atmsResult, hospitalsResult, toiletsResult, busStopsResult] = await Promise.allSettled([
-        this.fusekiService.executeSelect(atmsQuery),
-        this.fusekiService.executeSelect(hospitalsQuery),
-        this.fusekiService.executeSelect(toiletsQuery),
-        this.fusekiService.executeSelect(busStopsQuery),
-      ]);
-
-      // Xử lý kết quả
-      const atmsCount =
-        atmsResult.status === 'fulfilled' && atmsResult.value.length > 0
-          ? parseInt(atmsResult.value[0].count || '0', 10)
-          : 0;
-
-      const hospitalsCount =
-        hospitalsResult.status === 'fulfilled' && hospitalsResult.value.length > 0
-          ? parseInt(hospitalsResult.value[0].count || '0', 10)
-          : 0;
-
-      const toiletsCount =
-        toiletsResult.status === 'fulfilled' && toiletsResult.value.length > 0
-          ? parseInt(toiletsResult.value[0].count || '0', 10)
-          : 0;
-
-      const busStopsCount =
-        busStopsResult.status === 'fulfilled' && busStopsResult.value.length > 0
-          ? parseInt(busStopsResult.value[0].count || '0', 10)
-          : 0;
-
-      const totalPois = atmsCount + hospitalsCount + toiletsCount + busStopsCount;
+      // Tổng hợp kết quả
+      results.forEach(({ type, count }) => {
+        breakdown[type] = count;
+        totalPois += count;
+      });
 
       const stats = {
         totalPois,
-        monitoringPoints: 0, // Placeholder - sẽ implement sau
-        totalReports: 0, // Placeholder - sẽ implement sau
-        breakdown: {
-          atms: atmsCount,
-          hospitals: hospitalsCount,
-          toilets: toiletsCount,
-          busStops: busStopsCount,
-        },
+        graphCount: Object.keys(graphMap).length,
+        breakdown,
+        // Top 5 categories
+        topCategories: Object.entries(breakdown)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([type, count]) => ({ type, count })),
       };
 
-      this.logger.log(`Dashboard stats: ${JSON.stringify(stats)}`);
+      this.logger.log(`Dashboard stats: ${totalPois} total POIs across ${Object.keys(graphMap).length} categories`);
       return stats;
     } catch (error) {
       this.logger.error('Error fetching dashboard stats:', error);
@@ -274,57 +282,67 @@ export class AdminService {
         throw new BadRequestException('Missing required fields: lat, lon');
       }
 
-      // Generate UUID v4
-      const uuid = this.generateUUID();
+      // Generate OSM-like ID (số nguyên lớn)
+      const osmId = Math.floor(Math.random() * 9000000000) + 1000000000;
       
-      // Tạo URI theo format yêu cầu: urn:ngsi-ld:PointOfInterest:Hanoi:{type}:{uuid}
-      const typeNormalized = data.type.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const poiUri = `urn:ngsi-ld:PointOfInterest:Hanoi:${typeNormalized}:${uuid}`;
+      // Tạo URI theo format: urn:ngsi-ld:PointOfInterest:Hanoi:{type}:{osmId}
+      const typeNormalized = data.type.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const poiUri = `urn:ngsi-ld:PointOfInterest:Hanoi:${typeNormalized}:${osmId}`;
 
-      // Xác định graph và ontology mapping dựa trên type
-      let graphUri = 'http://localhost:3030/graph/atm'; // Default
-      let schemaType = 'schema:FinancialService';
+      // Lấy graph URI từ graph map
+      const graphMap = this.getGraphMap();
+      const graphUri = graphMap[data.type.toLowerCase()] || graphMap['atm'];
 
-      switch (data.type.toLowerCase()) {
-        case 'hospital':
-          graphUri = 'http://localhost:3030/graph/hospital';
-          schemaType = 'schema:MedicalClinic';
-          break;
-        case 'toilet':
-        case 'toilets':
-          graphUri = 'http://localhost:3030/graph/toilet';
-          schemaType = 'schema:PublicToilet';
-          break;
-        case 'bus-stop':
-        case 'bus_stop':
-        case 'busstop':
-          graphUri = 'http://localhost:3030/graph/bus_stop';
-          schemaType = 'schema:BusStation';
-          break;
-        case 'atm':
-        default:
-          graphUri = 'http://localhost:3030/graph/atm';
-          schemaType = 'schema:FinancialService';
-      }
+      // Mapping type sang schema.org class
+      const typeSchemaMap: Record<string, string> = {
+        'atm': 'schema:FinancialService',
+        'bank': 'schema:BankOrCreditUnion',
+        'hospital': 'schema:Hospital',
+        'clinic': 'schema:MedicalClinic',
+        'public_toilet': 'schema:PublicToilet',
+        'bus_stop': 'schema:BusStop',
+        'school': 'schema:School',
+        'university': 'schema:CollegeOrUniversity',
+        'library': 'schema:Library',
+        'post_office': 'schema:PostOffice',
+        'police': 'schema:PoliceStation',
+        'fire_station': 'schema:FireStation',
+        'park': 'schema:Park',
+        'playground': 'schema:Playground',
+        'parking': 'schema:ParkingFacility',
+        'restaurant': 'schema:Restaurant',
+        'cafe': 'schema:CafeOrCoffeeShop',
+        'supermarket': 'schema:GroceryStore',
+        'pharmacy': 'schema:Pharmacy',
+        'fuel_station': 'schema:GasStation',
+        'charging_station': 'schema:ChargingStation',
+      };
+
+      const schemaType = typeSchemaMap[data.type.toLowerCase()] || 'schema:Place';
 
       // Escape chuỗi để tránh SPARQL injection
       const escapedName = this.escapeSparqlString(data.name);
       const escapedAddress = data.address ? this.escapeSparqlString(data.address) : null;
 
-      // SPARQL INSERT query với ontology mapping đầy đủ
+      // Tạo WKT string: POINT(lon lat)
+      const wktString = `POINT(${data.lon} ${data.lat})`;
+
+      // SPARQL INSERT query với cấu trúc mới
       const insertQuery = `
-        PREFIX fiware: <https://uri.fiware.org/ns/data-models#>
+        PREFIX ext: <http://opendatafithou.org/def/extension/>
+        PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         PREFIX schema: <http://schema.org/>
         PREFIX geo: <http://www.opengis.net/ont/geosparql#>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         
         INSERT DATA {
           GRAPH <${graphUri}> {
-            <${poiUri}> a fiware:PointOfInterest , ${schemaType} ;
-              schema:name "${escapedName}" ;
-              geo:lat "${data.lat}"^^xsd:decimal ;
-              geo:long "${data.lon}"^^xsd:decimal ${escapedAddress ? `;
-              schema:address "${escapedAddress}"` : ''} .
+            <${poiUri}> a ${schemaType} , fiware:PointOfInterest ;
+              ext:osm_id ${osmId} ;
+              ext:osm_type "node" ;
+              schema:name "${escapedName}"@en ${escapedAddress ? `;
+              schema:address "${escapedAddress}"` : ''} ;
+              geo:asWKT "${wktString}"^^geo:wktLiteral .
           }
         }
       `;
@@ -338,7 +356,7 @@ export class AdminService {
         success: true,
         message: 'POI created successfully',
         id: poiUri,
-        uuid,
+        osmId,
         graphUri,
       };
     } catch (error) {
@@ -349,7 +367,7 @@ export class AdminService {
 
   /**
    * Xóa POI khỏi database
-   * Sử dụng SPARQL DELETE để xóa tất cả triples liên quan đến POI
+   * Sử dụng SPARQL DELETE để xóa tất cả triples liên quan đến POI từ tất cả các graph
    */
   async deletePoi(id: string) {
     try {
@@ -360,15 +378,29 @@ export class AdminService {
         throw new BadRequestException('Missing required field: id');
       }
 
-      // SPARQL DELETE query để xóa tất cả triples có subject là POI này
-      const deleteQuery = `
-        DELETE WHERE {
-          <${id}> ?p ?o .
-        }
-      `;
+      // Lấy danh sách tất cả các graph
+      const graphMap = this.getGraphMap();
+      const graphUrls = Object.values(graphMap);
 
-      // Thực thi DELETE query
-      await this.fusekiService.update(deleteQuery);
+      // SPARQL DELETE query để xóa từ tất cả các graph
+      const deletePromises = graphUrls.map(async (graphUrl) => {
+        const deleteQuery = `
+          DELETE WHERE {
+            GRAPH <${graphUrl}> {
+              <${id}> ?p ?o .
+            }
+          }
+        `;
+        
+        try {
+          await this.fusekiService.update(deleteQuery);
+        } catch (error) {
+          this.logger.warn(`Failed to delete from ${graphUrl}: ${error.message}`);
+        }
+      });
+
+      // Thực thi tất cả các DELETE queries
+      await Promise.all(deletePromises);
 
       this.logger.log(`POI deleted successfully: ${id}`);
 
@@ -408,106 +440,20 @@ export class AdminService {
 
   /**
    * Lấy dữ liệu traffic IoT cho map
-   * Return empty array nếu graph chưa tồn tại hoặc rỗng
+   * DEPRECATED - IoT simulation không còn được sử dụng
    */
   async getTrafficData() {
-    try {
-      this.logger.log('Fetching traffic IoT data');
-
-      const query = `
-PREFIX sosa: <http://www.w3.org/ns/sosa/>
-PREFIX ex: <http://opendatafithou.org/sensor/>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-PREFIX geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-SELECT ?sensor ?sensorLabel ?lat ?lon ?intensity ?congested
-WHERE {
-  GRAPH <http://opendatafithou.org/graph/iot-traffic> {
-    ?obs a sosa:Observation ;
-      sosa:madeBySensor ?sensor ;
-      sosa:hasSimpleResult ?intensity ;
-      ex:congested ?congested ;
-      ex:sensorType "traffic_camera" .
-      
-    ?sensor rdfs:label ?sensorLabel ;
-      geo:lat ?lat ;
-      geo:long ?lon .
-  }
-}
-      `.trim();
-
-      const results = await this.fusekiService.executeSelect(query);
-
-      // Transform kết quả thành format sạch cho frontend
-      const trafficData = results.map((row) => ({
-        id: row.sensor?.split('/').pop() || 'unknown',
-        name: row.sensorLabel || 'Unknown Sensor',
-        lat: parseFloat(row.lat),
-        lon: parseFloat(row.lon),
-        intensity: parseInt(row.intensity, 10),
-        congested: row.congested === 'true',
-      }));
-
-      this.logger.log(`Traffic data fetched: ${trafficData.length} sensors`);
-      return trafficData;
-    } catch (error) {
-      // Return empty array thay vì throw error (graph có thể chưa tồn tại)
-      this.logger.warn('Traffic data fetch returned empty (graph may not exist yet)');
-      return [];
-    }
+    this.logger.warn('getTrafficData() is deprecated - IoT simulation has been disabled');
+    return [];
   }
 
   /**
    * Lấy dữ liệu flood IoT cho map
-   * Return empty array nếu graph chưa tồn tại hoặc rỗng
+   * DEPRECATED - IoT simulation không còn được sử dụng
    */
   async getFloodData() {
-    try {
-      this.logger.log('Fetching flood IoT data');
-
-      const query = `
-PREFIX sosa: <http://www.w3.org/ns/sosa/>
-PREFIX ex: <http://opendatafithou.org/sensor/>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-PREFIX geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-SELECT ?sensor ?sensorLabel ?lat ?lon ?waterLevel ?alertLevel
-WHERE {
-  GRAPH <http://opendatafithou.org/graph/iot-flood> {
-    ?obs a sosa:Observation ;
-      sosa:madeBySensor ?sensor ;
-      sosa:hasSimpleResult ?waterLevel ;
-      ex:alertLevel ?alertLevel ;
-      ex:sensorType "flood_sensor" .
-      
-    ?sensor rdfs:label ?sensorLabel ;
-      geo:lat ?lat ;
-      geo:long ?lon .
-  }
-}
-      `.trim();
-
-      const results = await this.fusekiService.executeSelect(query);
-
-      // Transform kết quả thành format sạch cho frontend
-      const floodData = results.map((row) => ({
-        id: row.sensor?.split('/').pop() || 'unknown',
-        name: row.sensorLabel || 'Unknown Sensor',
-        lat: parseFloat(row.lat),
-        lon: parseFloat(row.lon),
-        waterLevel: parseInt(row.waterLevel, 10),
-        alertLevel: row.alertLevel || 'normal',
-      }));
-
-      this.logger.log(`Flood data fetched: ${floodData.length} sensors`);
-      return floodData;
-    } catch (error) {
-      // Return empty array thay vì throw error (graph có thể chưa tồn tại)
-      this.logger.warn('Flood data fetch returned empty (graph may not exist yet)');
-      return [];
-    }
+    this.logger.warn('getFloodData() is deprecated - IoT simulation has been disabled');
+    return [];
   }
 
   /**
@@ -608,14 +554,14 @@ WHERE {
         predicateMap[predicate] = varName.substring(1); // Remove '?'
       });
 
-      // Build query động
+      // Build query động - sử dụng fiware:PointOfInterest thay vì geo:Point
       const query = `
-        PREFIX geo1: <http://www.opendatafithou.net/ont/geosparql#>
+        PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         
         SELECT ${selectVars.join(' ')}
         WHERE {
           GRAPH <${graphUrl}> {
-            ?s a geo1:Point .
+            ?s a fiware:PointOfInterest .
             ${optionalPatterns.join('\n            ')}
           }
         }
@@ -676,21 +622,44 @@ WHERE {
               } catch (e) {
                 this.logger.warn(`Failed to parse WKT: ${value}`);
               }
-            } else if (fieldName === 'label' || fieldName.includes('name')) {
-              if (!poi.name) poi.name = value;
-            } else if (fieldName.includes('addr') || fieldName === 'address') {
-              poi.address = value;
-            } else {
-              // Normalize field name
-              fieldName = fieldName.replace(/:/g, '_');
+            } else if (fieldName === 'name') {
+              // Extract Vietnamese name (preferred)
+              if (value.includes('@vi')) {
+                poi.name = value.replace('@vi', '').replace(/"/g, '');
+              } else if (!poi.name) {
+                poi.name = value.replace('@en', '').replace(/"/g, '');
+              }
+            } else if (fieldName === 'osm_id') {
+              poi.osm_id = value;
+            } else if (fieldName === 'osm_type') {
+              poi.osm_type = value;
+            } else if (fieldName.startsWith('addr_')) {
+              // Map address fields: addr_city, addr_district, addr_street, addr_housenumber
               poi[fieldName] = value;
+            } else if (fieldName === 'operator') {
+              poi.operator = value;
+            } else if (fieldName === 'brand') {
+              poi.brand = value;
+            } else if (fieldName === 'legalName') {
+              poi.legal_name = value;
+            } else if (fieldName === 'telephone') {
+              poi.phone = value;
+            } else if (fieldName === 'url') {
+              poi.website = value;
+            } else if (fieldName === 'sameAs') {
+              poi.wikidata = value;
+            } else {
+              // Normalize field name và chỉ thêm nếu có giá trị
+              fieldName = fieldName.replace(/:/g, '_');
+              if (value && value.trim()) {
+                poi[fieldName] = value;
+              }
             }
           });
 
           // Fallback cho name
           if (!poi.name) {
-            const id = poi.id?.split('/').pop() || 'unknown';
-            poi.name = `POI #${id.substring(0, 10)}`;
+            poi.name = poi.osm_id ? `POI #${poi.osm_id}` : `${typeFromGraph}_${Math.random().toString(36).substr(2, 9)}`;
           }
 
           // Ensure coordinates exist

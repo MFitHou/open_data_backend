@@ -23,18 +23,6 @@ import { SparqlQueryDto } from './dto/SparqlQueryDto';
 export class FusekiController {
   constructor(private readonly fusekiService: FusekiService) {}
 
-  @Get('atms')
-  async getAllATMs() {
-    try {
-      const rows = await this.fusekiService.queryAllATMs();
-      return { count: rows.length, data: rows };
-    } catch (e: any) {
-      throw new HttpException(
-        { message: 'Query Fuseki failed', error: e.message },
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-  }
 
   @Post('query')
   async runQuery(@Body('query') query?: SparqlQueryDto['query']) {
@@ -109,6 +97,61 @@ export class FusekiController {
     } catch (e: any) {
       throw new HttpException(
         { message: 'Get POIs by type failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get('poi')
+  async getPOIByUri(
+    @Query('uri') uri?: string,
+    @Query('language') language?: string,
+  ) {
+    try {
+      if (!uri) {
+        throw new BadRequestException('uri parameter is required');
+      }
+      
+      const data = await this.fusekiService.getPOIByUri({
+        uri: uri.trim(),
+        language: language || 'vi',
+      });
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get POI by URI failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Post('device-locations')
+  async getDeviceLocations(
+    @Body('deviceUris') deviceUris?: string[],
+  ) {
+    try {
+      if (!deviceUris || deviceUris.length === 0) {
+        throw new BadRequestException('deviceUris array is required');
+      }
+      
+      const data = await this.fusekiService.getDeviceLocations(deviceUris);
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get device locations failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get('iot-stations')
+  async getAllIoTStations() {
+    try {
+      const data = await this.fusekiService.getAllIoTStations();
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get IoT stations failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }

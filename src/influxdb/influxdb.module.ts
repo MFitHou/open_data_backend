@@ -14,17 +14,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AdminService } from './admin.service';
-import { AdminController } from './admin.controller';
-import { AdminFusekiService } from './admin-fuseki.service';
+import { InfluxDBService } from './influxdb.service';
+import { InfluxDBController } from './influxdb.controller';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true })],
-  providers: [AdminService, AdminFusekiService],
-  controllers: [AdminController],
-  exports: [AdminService],
+  imports: [ConfigModule],
+  controllers: [InfluxDBController],
+  providers: [InfluxDBService],
+  exports: [InfluxDBService],
 })
-export class AdminModule {}
+export class InfluxDBModule {}

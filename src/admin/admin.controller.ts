@@ -17,14 +17,12 @@
 
 import { Controller, Get, Post, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { IotSimulatorService } from './iot-simulator.service';
 import { CreatePoiDto } from './dto/CreatePoiDto';
 
 @Controller('admin')
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
-    private readonly iotSimulatorService: IotSimulatorService,
   ) {}
 
   /**
@@ -177,29 +175,29 @@ export class AdminController {
 
   /**
    * GET /admin/iot/traffic
-   * Lấy dữ liệu traffic simulation cho map (clean format)
+   * DEPRECATED - IoT simulation không còn được sử dụng
    */
   @Get('iot/traffic')
   async getTrafficData() {
-    const data = await this.adminService.getTrafficData();
     return {
-      success: true,
-      count: data.length,
-      data,
+      success: false,
+      message: 'IoT simulation has been disabled',
+      count: 0,
+      data: [],
     };
   }
 
   /**
    * GET /admin/iot/flood
-   * Lấy dữ liệu flood simulation cho map (clean format)
+   * DEPRECATED - IoT simulation không còn được sử dụng
    */
   @Get('iot/flood')
   async getFloodData() {
-    const data = await this.adminService.getFloodData();
     return {
-      success: true,
-      count: data.length,
-      data,
+      success: false,
+      message: 'IoT simulation has been disabled',
+      count: 0,
+      data: [],
     };
   }
 }
