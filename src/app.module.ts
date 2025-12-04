@@ -25,6 +25,7 @@ import { ChatbotModule } from './chatbot/chatbot.module';
 import { WikidataModule } from './wikidata/wikidata.module';
 import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
+import { InfluxDBModule } from './influxdb/influxdb.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AdminModule } from './admin/admin.module';
     WikidataModule,
     OverpassModule,
     AdminModule,
+    InfluxDBModule,
   ],
   controllers: [AppController],
   providers: [AppService],

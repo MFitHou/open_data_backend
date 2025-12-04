@@ -20,6 +20,15 @@ import { ConfigService } from "@nestjs/config";
 import { ChatTool } from "src/common/decorators/chat-tools.decorator";
 import { SchemaType } from "@google/generative-ai";
 import { classifyPoiType, parseTypeFromUri } from "src/common/poi-types";
+import { InfluxDBService } from "../influxdb/influxdb.service";
+
+// Sensor data interface for POI
+export interface SensorData {
+  aqi: number | null;
+  temperature: number | null;
+  noise_level: number | null;
+  timestamp: string | null;
+}
 
 @Injectable()
 export class FusekiService implements OnModuleInit {
@@ -29,7 +38,10 @@ export class FusekiService implements OnModuleInit {
   private readonly updateEndpoint: string;
   private readonly graphUri: string;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private influxDBService: InfluxDBService,
+  ) {
     this.queryEndpoint = 
       this.configService.get<string>('FUSEKI_QUERY_ENDPOINT') ||
       `${this.configService.get<string>('FUSEKI_BASE_URL')}/${this.configService.get<string>('FUSEKI_DATASET')}/sparql`;
@@ -39,6 +51,114 @@ export class FusekiService implements OnModuleInit {
       `${this.configService.get<string>('FUSEKI_BASE_URL')}/${this.configService.get<string>('FUSEKI_DATASET')}/update`;
     
     this.graphUri = this.configService.get<string>('FUSEKI_GRAPH_ATM') || "http://localhost:3030/graph/atm";
+  }
+
+  /**
+   * Fetch sensor data (AQI, temperature, noise_level) for a device URI
+   */
+  private async fetchSensorDataForDevice(deviceUri: string): Promise<SensorData> {
+    const sensorData: SensorData = {
+      aqi: null,
+      temperature: null,
+      noise_level: null,
+      timestamp: null,
+    };
+
+    if (!deviceUri) return sensorData;
+
+    try {
+      // Use full device URI as station_id (InfluxDB stores full URI)
+      const stationId = deviceUri;
+      
+      this.logger.debug(`[fetchSensorData] Station ID: ${stationId}`);
+      
+      // Fetch air quality data (AQI)
+      try {
+        const airQualityData = await this.influxDBService.getLatestByStation({
+          stationId,
+          measurement: 'air_quality',
+          fields: ['aqi'],
+        });
+        this.logger.debug(`[fetchSensorData] Air quality result for ${stationId}: ${JSON.stringify(airQualityData)}`);
+        if (airQualityData?.data?.aqi !== undefined && airQualityData?.data?.aqi !== null) {
+          sensorData.aqi = airQualityData.data.aqi;
+          if (!sensorData.timestamp || airQualityData.timestamp > sensorData.timestamp) {
+            sensorData.timestamp = airQualityData.timestamp;
+          }
+        }
+      } catch (e: any) {
+        this.logger.debug(`No air_quality data for station ${stationId}: ${e.message}`);
+      }
+
+      // Fetch weather data (temperature)
+      try {
+        const weatherData = await this.influxDBService.getLatestByStation({
+          stationId,
+          measurement: 'weather',
+          fields: ['temperature'],
+        });
+        this.logger.debug(`[fetchSensorData] Weather result for ${stationId}: ${JSON.stringify(weatherData)}`);
+        if (weatherData?.data?.temperature !== undefined && weatherData?.data?.temperature !== null) {
+          sensorData.temperature = weatherData.data.temperature;
+          if (!sensorData.timestamp || weatherData.timestamp > sensorData.timestamp) {
+            sensorData.timestamp = weatherData.timestamp;
+          }
+        }
+      } catch (e: any) {
+        this.logger.debug(`No weather data for station ${stationId}: ${e.message}`);
+      }
+
+      // Fetch traffic data (noise_level)
+      try {
+        const trafficData = await this.influxDBService.getLatestByStation({
+          stationId,
+          measurement: 'traffic',
+          fields: ['noise_level'],
+        });
+        this.logger.debug(`[fetchSensorData] Traffic result for ${stationId}: ${JSON.stringify(trafficData)}`);
+        if (trafficData?.data?.noise_level !== undefined && trafficData?.data?.noise_level !== null) {
+          sensorData.noise_level = trafficData.data.noise_level;
+          if (!sensorData.timestamp || trafficData.timestamp > sensorData.timestamp) {
+            sensorData.timestamp = trafficData.timestamp;
+          }
+        }
+      } catch (e: any) {
+        this.logger.debug(`No traffic data for station ${stationId}: ${e.message}`);
+      }
+
+    } catch (e: any) {
+      this.logger.warn(`Failed to fetch sensor data for device ${deviceUri}: ${e.message}`);
+    }
+
+    return sensorData;
+  }
+
+  /**
+   * Batch fetch sensor data for multiple device URIs
+   */
+  private async fetchSensorDataForDevices(deviceMap: Map<string, string>): Promise<Map<string, SensorData>> {
+    const sensorDataMap = new Map<string, SensorData>();
+    
+    // Get unique device URIs
+    const uniqueDevices = new Set(deviceMap.values());
+    const deviceSensorData = new Map<string, SensorData>();
+    
+    // Fetch sensor data for each unique device
+    for (const deviceUri of uniqueDevices) {
+      if (deviceUri) {
+        const data = await this.fetchSensorDataForDevice(deviceUri);
+        deviceSensorData.set(deviceUri, data);
+      }
+    }
+    
+    // Map back to POI URIs
+    for (const [poiUri, deviceUri] of deviceMap.entries()) {
+      if (deviceUri && deviceSensorData.has(deviceUri)) {
+        sensorDataMap.set(poiUri, deviceSensorData.get(deviceUri)!);
+      }
+    }
+    
+    return sensorDataMap;
   }
 
   async onModuleInit() {
@@ -388,6 +508,67 @@ export class FusekiService implements OnModuleInit {
       }
     }
 
+    // Fetch device IDs from iot-coverage graph
+    if (results.length > 0) {
+      const poiUris = results.map(r => `<${r.poi}>`).join(' ');
+      const iotCoverageGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_COVERAGE') || 'http://localhost:3030/graph/iot-coverage';
+      
+      const deviceQuery = `
+        PREFIX sosa: <http://www.w3.org/ns/sosa/>
+        
+        SELECT ?poi ?device
+        WHERE {
+          GRAPH <${iotCoverageGraphUri}> {
+            VALUES ?poi { ${poiUris} }
+            ?poi sosa:isSampledBy ?device .
+          }
+        }
+      `;
+      
+      try {
+        const deviceRows = await this.runSelect(deviceQuery);
+        const deviceMap = new Map<string, string>();
+        
+        deviceRows.forEach(row => {
+          deviceMap.set(row.poi, row.device);
+        });
+        
+        // Assign device to results
+        results.forEach(r => {
+          (r as any).device = deviceMap.get(r.poi) || null;
+        });
+        
+        this.logger.debug(`Found device mappings for ${deviceMap.size} POIs`);
+      } catch (e: any) {
+        this.logger.warn('Failed to fetch device mappings: ' + e.message);
+      }
+    }
+
+    // Fetch sensor data (AQI, temperature, noise_level) for POIs with devices
+    if (results.length > 0) {
+      const deviceMap = new Map<string, string>();
+      results.forEach(r => {
+        if ((r as any).device) {
+          deviceMap.set(r.poi, (r as any).device);
+        }
+      });
+      
+      if (deviceMap.size > 0) {
+        try {
+          const sensorDataMap = await this.fetchSensorDataForDevices(deviceMap);
+          
+          results.forEach(r => {
+            const sensorData = sensorDataMap.get(r.poi);
+            (r as any).sensorData = sensorData || null;
+          });
+          
+          this.logger.debug(`Fetched sensor data for ${sensorDataMap.size} POIs`);
+        } catch (e: any) {
+          this.logger.warn('Failed to fetch sensor data: ' + e.message);
+        }
+      }
+    }
+
     return {
       count: results.length,
       type,
@@ -649,10 +830,221 @@ export class FusekiService implements OnModuleInit {
         this.logger.warn(`[getPOIByUri] Failed to fetch topology: ${e.message}`);
       }
       
+      // Fetch device ID from iot-coverage graph
+      const iotCoverageGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_COVERAGE') || 'http://localhost:3030/graph/iot-coverage';
+      
+      const deviceQuery = `
+        PREFIX sosa: <http://www.w3.org/ns/sosa/>
+        
+        SELECT ?device
+        WHERE {
+          GRAPH <${iotCoverageGraphUri}> {
+            <${uri}> sosa:isSampledBy ?device .
+          }
+        }
+        LIMIT 1
+      `;
+      
+      try {
+        const deviceRows = await this.runSelect(deviceQuery);
+        if (deviceRows.length > 0) {
+          (poiData as any).device = deviceRows[0].device;
+          this.logger.debug(`[getPOIByUri] Found device: ${(poiData as any).device}`);
+        } else {
+          (poiData as any).device = null;
+        }
+      } catch (e: any) {
+        this.logger.warn(`[getPOIByUri] Failed to fetch device: ${e.message}`);
+        (poiData as any).device = null;
+      }
+      
+      // Also fetch device for topology related entities
+      if (poiData.topology.length > 0) {
+        const relatedUris = poiData.topology.map(t => `<${t.related.poi}>`).join(' ');
+        
+        const relatedDeviceQuery = `
+          PREFIX sosa: <http://www.w3.org/ns/sosa/>
+          
+          SELECT ?poi ?device
+          WHERE {
+            GRAPH <${iotCoverageGraphUri}> {
+              VALUES ?poi { ${relatedUris} }
+              ?poi sosa:isSampledBy ?device .
+            }
+          }
+        `;
+        
+        try {
+          const relatedDeviceRows = await this.runSelect(relatedDeviceQuery);
+          const relatedDeviceMap = new Map<string, string>();
+          
+          relatedDeviceRows.forEach(row => {
+            relatedDeviceMap.set(row.poi, row.device);
+          });
+          
+          // Assign device to topology related entities
+          poiData.topology.forEach(t => {
+            (t.related as any).device = relatedDeviceMap.get(t.related.poi) || null;
+          });
+          
+          this.logger.debug(`[getPOIByUri] Found device mappings for ${relatedDeviceMap.size} topology entities`);
+        } catch (e: any) {
+          this.logger.warn(`[getPOIByUri] Failed to fetch device for topology: ${e.message}`);
+        }
+      }
+      
+      // Fetch sensor data for main POI
+      if ((poiData as any).device) {
+        try {
+          const sensorData = await this.fetchSensorDataForDevice((poiData as any).device);
+          (poiData as any).sensorData = sensorData;
+          this.logger.debug(`[getPOIByUri] Fetched sensor data for POI`);
+        } catch (e: any) {
+          this.logger.warn(`[getPOIByUri] Failed to fetch sensor data: ${e.message}`);
+          (poiData as any).sensorData = null;
+        }
+      } else {
+        (poiData as any).sensorData = null;
+      }
+      
       return { found: true, poi: poiData };
     } catch (e: any) {
       this.logger.error(`[getPOIByUri] Error: ${e.message}`);
       throw e;
+    }
+  }
+
+  /**
+   * Get all IoT stations with their coordinates from iot_infrastructure graph
+   * URI Pattern: urn:ngsi-ld:Device:Hanoi:station:{TênTrạm}
+   */
+  async getAllIoTStations() {
+    const iotInfraGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_INFRASTRUCTURE') || 'http://localhost:3030/graph/iot-infrastructure';
+    
+    this.logger.debug(`[getAllIoTStations] Fetching all IoT stations from ${iotInfraGraphUri}`);
+    
+    // Query to get all stations with their geometry
+    const query = `
+      PREFIX sosa: <http://www.w3.org/ns/sosa/>
+      PREFIX ssn: <http://www.w3.org/ns/ssn/>
+      PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX sf: <http://www.opengis.net/ont/sf#>
+      
+      SELECT DISTINCT ?station ?label ?wkt
+      WHERE {
+        GRAPH <${iotInfraGraphUri}> {
+          ?station a sosa:Platform .
+          OPTIONAL { ?station rdfs:label ?label . }
+          
+          ?station geo:hasGeometry ?geometry .
+          ?geometry a sf:Point .
+          ?geometry geo:asWKT ?wkt .
+        }
+      }
+    `;
+    
+    try {
+      const rows = await this.runSelect(query);
+      this.logger.debug(`[getAllIoTStations] Found ${rows.length} stations`);
+      
+      const stations: Array<{ stationId: string; label: string; lat: number; lon: number }> = [];
+      
+      rows.forEach(row => {
+        if (row.wkt && row.station) {
+          // Parse WKT to get coordinates
+          const wktMatch = row.wkt.match(/POINT\s*\(\s*([\d.\-]+)\s+([\d.\-]+)\s*\)/i);
+          if (wktMatch) {
+            const lon = parseFloat(wktMatch[1]);
+            const lat = parseFloat(wktMatch[2]);
+            
+            // Only add if coordinates are valid
+            if (!isNaN(lat) && !isNaN(lon)) {
+              // Extract station name from URI (last part after last :)
+              const stationName = row.station.split(':').pop() || row.station;
+              stations.push({
+                stationId: row.station,
+                label: row.label || stationName,
+                lat,
+                lon,
+              });
+            }
+          }
+        }
+      });
+      
+      this.logger.debug(`[getAllIoTStations] Parsed ${stations.length} valid stations`);
+      
+      return { stations };
+    } catch (e: any) {
+      this.logger.error(`[getAllIoTStations] Error: ${e.message}`);
+      return { stations: [] };
+    }
+  }
+
+  /**
+   * Get locations of multiple devices (for AQI layer)
+   * Fetches lat/lon directly from iot_infrastructure graph
+   */
+  async getDeviceLocations(deviceUris: string[]) {
+    if (!deviceUris || deviceUris.length === 0) {
+      return { locations: {} };
+    }
+    
+    this.logger.debug(`[getDeviceLocations] Fetching locations for ${deviceUris.length} devices`);
+    
+    const iotInfraGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_INFRASTRUCTURE') || 'http://localhost:3030/graph/iot-infrastructure';
+    
+    // Build VALUES clause for device URIs
+    const deviceValues = deviceUris.map(uri => `<${uri}>`).join(' ');
+    
+    // Query to get device locations directly from iot_infrastructure
+    const query = `
+      PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+      PREFIX sf: <http://www.opengis.net/ont/sf#>
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      
+      SELECT DISTINCT ?device ?label ?wkt
+      WHERE {
+        GRAPH <${iotInfraGraphUri}> {
+          VALUES ?device { ${deviceValues} }
+          ?device geo:hasGeometry ?geometry .
+          ?geometry a sf:Point .
+          ?geometry geo:asWKT ?wkt .
+          OPTIONAL { ?device rdfs:label ?label . }
+        }
+      }
+    `;
+    
+    try {
+      const rows = await this.runSelect(query);
+      this.logger.debug(`[getDeviceLocations] Found ${rows.length} device locations`);
+      
+      const locations: Record<string, { lat: number; lon: number; label: string }> = {};
+      
+      rows.forEach(row => {
+        if (row.wkt && row.device) {
+          // Parse WKT to get coordinates
+          const wktMatch = row.wkt.match(/POINT\s*\(\s*([\d.\-]+)\s+([\d.\-]+)\s*\)/i);
+          if (wktMatch) {
+            const lon = parseFloat(wktMatch[1]);
+            const lat = parseFloat(wktMatch[2]);
+            
+            // Only add if coordinates are valid
+            if (!isNaN(lat) && !isNaN(lon)) {
+              const stationName = row.device.split(':').pop() || row.device;
+              locations[row.device] = { lat, lon, label: row.label || stationName };
+            }
+          }
+        }
+      });
+      
+      this.logger.debug(`[getDeviceLocations] Parsed ${Object.keys(locations).length} valid locations`);
+      
+      return { locations };
+    } catch (e: any) {
+      this.logger.error(`[getDeviceLocations] Error: ${e.message}`);
+      return { locations: {} };
     }
   }
 
@@ -678,7 +1070,7 @@ export class FusekiService implements OnModuleInit {
 
   @ChatTool({
     name: 'searchNearby',
-    description: 'Tìm các POI (điểm quan tâm) gần vị trí kinh độ/vĩ độ cho trước. Hỗ trợ 27+ loại dịch vụ: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Có thể tìm nhiều loại cùng lúc. Tự động bao gồm thông tin topology relationships (địa điểm liên quan).',
+    description: 'Tìm các POI (điểm quan tâm) gần vị trí kinh độ/vĩ độ cho trước. Hỗ trợ 27+ loại dịch vụ: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Có thể tìm nhiều loại cùng lúc. Tự động bao gồm thông tin topology relationships (địa điểm liên quan). **KẾT QUẢ BAO GỒM DỮ LIỆU CẢM BIẾN**: sensorData với aqi (chỉ số chất lượng không khí 0-500, thấp=tốt), temperature (nhiệt độ °C), noise_level (độ ồn dB). Dùng minAqi/maxAqi để lọc theo chất lượng không khí (ví dụ: maxAqi=50 = không khí tốt, maxAqi=100 = trung bình).',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -687,6 +1079,8 @@ export class FusekiService implements OnModuleInit {
         radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
         types: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Danh sách loại dịch vụ cần tìm (atm, hospital, school, cafe, bus_stop, playground, restaurant, charging_station, etc.). Để trống để tìm tất cả.' },
         includeIoT: { type: SchemaType.BOOLEAN, description: 'Bao gồm thông tin trạm cảm biến IoT phủ sóng. Mặc định: false.' },
+        minAqi: { type: SchemaType.NUMBER, description: 'AQI tối thiểu để lọc (0-500). Chỉ trả về địa điểm có aqi >= minAqi.' },
+        maxAqi: { type: SchemaType.NUMBER, description: 'AQI tối đa để lọc (0-500). Dùng maxAqi=50 cho không khí tốt, maxAqi=100 cho không khí trung bình.' },
         limit: { type: SchemaType.NUMBER, description: 'Số POI tối đa trả về (mặc định 150)' },
       },
       required: ['lon', 'lat', 'radiusKm'],
@@ -699,6 +1093,8 @@ export class FusekiService implements OnModuleInit {
     types?: string[];          // Danh sách loại dịch vụ (atm, hospital, school, cafe, bus_stop, playground, etc.)
     includeTopology?: boolean; // thêm thông tin topology relationships
     includeIoT?: boolean;      // thêm thông tin IoT coverage
+    minAqi?: number;           // Lọc AQI tối thiểu
+    maxAqi?: number;           // Lọc AQI tối đa (ví dụ: 50 = không khí tốt)
     limit?: number;
     language?: string;         // Ngôn ngữ: 'vi', 'en', 'all' (mặc định: 'vi')
   }) {
@@ -709,7 +1105,10 @@ export class FusekiService implements OnModuleInit {
     ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
     if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
 
-    const limit = Math.min(Math.max(params.limit ?? 100, 1), 100);
+    // Tăng limit internal nếu có filter AQI để có đủ kết quả sau khi filter
+    const hasAqiFilter = params.minAqi !== undefined || params.maxAqi !== undefined;
+    const internalLimit = hasAqiFilter ? 300 : Math.min(Math.max(params.limit ?? 100, 1), 100);
+    const outputLimit = Math.min(Math.max(params.limit ?? 100, 1), 100);
     
     // Luôn bật topology cho tất cả queries, IoT tùy chọn
     const includeTopology = true; // Always true
@@ -866,7 +1265,7 @@ export class FusekiService implements OnModuleInit {
         ${iotJoin}
       }
       GROUP BY ?poi ?name ?amenity ?highway ?leisure ?brand ?operator ?wkt ?lon ?lat
-      LIMIT ${limit * 3}
+      LIMIT ${internalLimit * 3}
     `;
 
     const rows = await this.runSelect(query);
@@ -934,7 +1333,7 @@ export class FusekiService implements OnModuleInit {
     
     this.logger.debug(`After deduplication: ${poiMap.size} unique POIs`);
 
-    // Process results với Haversine
+    // Process results với Haversine - chưa slice để có thể filter theo AQI sau
     let results = Array.from(poiMap.values())
       .map(r => {
         const dKm = this.haversineKm(lat, lon, parseFloat(r.lat), parseFloat(r.lon));
@@ -962,7 +1361,7 @@ export class FusekiService implements OnModuleInit {
       })
       .filter(r => r.distanceKm <= radiusKm)
       .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, limit);
+      .slice(0, hasAqiFilter ? internalLimit : outputLimit);
 
     // Fetch topology relationships nếu được yêu cầu
     if (includeTopology && results.length > 0) {
@@ -998,20 +1397,59 @@ export class FusekiService implements OnModuleInit {
             }
           }
           
-          # Tìm tên của địa điểm liên quan (ở bất kỳ graph nào)
+          # Tìm tên của địa điểm liên quan - ưu tiên tiếng Việt
           OPTIONAL {
             GRAPH ?g {
               {
-                ?related schema:name ?relatedName .
-              } UNION {
-                ?related rdfs:label ?relatedName .
+                ?related schema:name ?relatedNameVi .
+                FILTER(LANG(?relatedNameVi) = "vi")
+              }
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g2 {
+              {
+                ?related schema:name ?relatedNameNoLang .
+                FILTER(LANG(?relatedNameNoLang) = "")
+              }
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g3 {
+              {
+                ?related schema:name ?relatedNameAny .
+              }
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g4 {
+              {
+                ?related rdfs:label ?relatedLabelVi .
+                FILTER(LANG(?relatedLabelVi) = "vi")
+              }
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g5 {
+              {
+                ?related rdfs:label ?relatedLabelNoLang .
+                FILTER(LANG(?relatedLabelNoLang) = "")
+              }
+            }
+          }
+          OPTIONAL {
+            GRAPH ?g6 {
+              {
+                ?related rdfs:label ?relatedLabelAny .
               }
             }
           }
           
+          BIND(COALESCE(?relatedNameVi, ?relatedNameNoLang, ?relatedNameAny, ?relatedLabelVi, ?relatedLabelNoLang, ?relatedLabelAny) AS ?relatedName)
+          
           # Lấy tọa độ của địa điểm liên quan
           OPTIONAL {
-            GRAPH ?g2 {
+            GRAPH ?g7 {
               ?related geo:asWKT ?relatedWkt .
             }
           }
@@ -1020,11 +1458,19 @@ export class FusekiService implements OnModuleInit {
       
       try {
         const topologyRows = await this.runSelect(topologyQuery);
-        const topologyMap = new Map<string, any[]>();
+        const topologyMap = new Map<string, Map<string, any>>();
         
         topologyRows.forEach(row => {
           if (!topologyMap.has(row.poi)) {
-            topologyMap.set(row.poi, []);
+            topologyMap.set(row.poi, new Map());
+          }
+          
+          // Deduplicate key: predicate + related URI
+          const dedupeKey = `${row.predicate}|${row.related}`;
+          
+          // Chỉ thêm nếu chưa tồn tại (ưu tiên kết quả đầu tiên - đã có tên tiếng Việt từ COALESCE)
+          if (topologyMap.get(row.poi)!.has(dedupeKey)) {
+            return; // Skip duplicate
           }
           
           // Parse WKT để lấy tọa độ
@@ -1041,7 +1487,7 @@ export class FusekiService implements OnModuleInit {
           // Parse type từ URI
           const parsed = row.related ? parseTypeFromUri(row.related) : null;
           
-          topologyMap.get(row.poi)!.push({
+          topologyMap.get(row.poi)!.set(dedupeKey, {
             predicate: row.predicate,
             related: {
               poi: row.related,
@@ -1058,11 +1504,134 @@ export class FusekiService implements OnModuleInit {
         
         results = results.map(r => ({
           ...r,
-          topology: topologyMap.get(r.poi) || [],
+          topology: topologyMap.has(r.poi) ? Array.from(topologyMap.get(r.poi)!.values()) : [],
         }));
+        
+        // Fetch device for topology related entities
+        const allRelatedUris = new Set<string>();
+        topologyRows.forEach(row => allRelatedUris.add(row.related));
+        
+        if (allRelatedUris.size > 0) {
+          const relatedUrisStr = Array.from(allRelatedUris).map(u => `<${u}>`).join(' ');
+          const iotCoverageGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_COVERAGE') || 'http://localhost:3030/graph/iot-coverage';
+          
+          const relatedDeviceQuery = `
+            PREFIX sosa: <http://www.w3.org/ns/sosa/>
+            
+            SELECT ?poi ?device
+            WHERE {
+              GRAPH <${iotCoverageGraphUri}> {
+                VALUES ?poi { ${relatedUrisStr} }
+                ?poi sosa:isSampledBy ?device .
+              }
+            }
+          `;
+          
+          try {
+            const relatedDeviceRows = await this.runSelect(relatedDeviceQuery);
+            const relatedDeviceMap = new Map<string, string>();
+            
+            relatedDeviceRows.forEach(row => {
+              relatedDeviceMap.set(row.poi, row.device);
+            });
+            
+            // Update topology related entities with device
+            results.forEach(r => {
+              if (r.topology) {
+                r.topology.forEach((t: any) => {
+                  t.related.device = relatedDeviceMap.get(t.related.poi) || null;
+                });
+              }
+            });
+            
+            this.logger.debug(`Found device mappings for ${relatedDeviceMap.size} topology entities`);
+          } catch (e: any) {
+            this.logger.warn('Failed to fetch device for topology: ' + e.message);
+          }
+        }
       } catch (e: any) {
         this.logger.warn('Failed to fetch topology: ' + e.message);
       }
+    }
+    
+    // Fetch device IDs from iot-coverage graph for main POIs
+    if (results.length > 0) {
+      const poiUris = results.map(r => `<${r.poi}>`).join(' ');
+      const iotCoverageGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_COVERAGE') || 'http://localhost:3030/graph/iot-coverage';
+      
+      const deviceQuery = `
+        PREFIX sosa: <http://www.w3.org/ns/sosa/>
+        
+        SELECT ?poi ?device
+        WHERE {
+          GRAPH <${iotCoverageGraphUri}> {
+            VALUES ?poi { ${poiUris} }
+            ?poi sosa:isSampledBy ?device .
+          }
+        }
+      `;
+      
+      try {
+        const deviceRows = await this.runSelect(deviceQuery);
+        const deviceMap = new Map<string, string>();
+        
+        deviceRows.forEach(row => {
+          deviceMap.set(row.poi, row.device);
+        });
+        
+        // Assign device to results
+        results = results.map(r => ({
+          ...r,
+          device: deviceMap.get(r.poi) || null,
+        }));
+        
+        this.logger.debug(`Found device mappings for ${deviceMap.size} POIs`);
+      } catch (e: any) {
+        this.logger.warn('Failed to fetch device mappings: ' + e.message);
+      }
+    }
+
+    // Fetch sensor data (AQI, temperature, noise_level) for POIs with devices
+    if (results.length > 0) {
+      const deviceMap = new Map<string, string>();
+      results.forEach(r => {
+        if ((r as any).device) {
+          deviceMap.set(r.poi, (r as any).device);
+        }
+      });
+      
+      if (deviceMap.size > 0) {
+        try {
+          const sensorDataMap = await this.fetchSensorDataForDevices(deviceMap);
+          
+          results = results.map(r => ({
+            ...r,
+            sensorData: sensorDataMap.get(r.poi) || null,
+          }));
+          
+          this.logger.debug(`Fetched sensor data for ${sensorDataMap.size} POIs`);
+        } catch (e: any) {
+          this.logger.warn('Failed to fetch sensor data: ' + e.message);
+        }
+      }
+    }
+
+    // Filter by AQI if requested
+    if (hasAqiFilter) {
+      const beforeFilter = results.length;
+      results = results.filter(r => {
+        const sensorData = (r as any).sensorData;
+        // Chỉ lọc những POI có sensor data và AQI
+        if (!sensorData || sensorData.aqi === null || sensorData.aqi === undefined) {
+          return false; // Bỏ qua POI không có dữ liệu AQI khi filter
+        }
+        const aqi = sensorData.aqi;
+        if (params.minAqi !== undefined && aqi < params.minAqi) return false;
+        if (params.maxAqi !== undefined && aqi > params.maxAqi) return false;
+        return true;
+      }).slice(0, outputLimit);
+      
+      this.logger.debug(`AQI filter: ${beforeFilter} -> ${results.length} (minAqi=${params.minAqi}, maxAqi=${params.maxAqi})`);
     }
 
     return {
@@ -1158,7 +1727,7 @@ export class FusekiService implements OnModuleInit {
 
   @ChatTool({
     name: 'searchNearbyWithTopology',
-    description: 'Tìm địa điểm có quan hệ topology với địa điểm khác. Ví dụ: tìm quán ăn gần trạm sạc, cafe trong công viên, bệnh viện có bãi đỗ xe. Hỗ trợ nhiều loại địa điểm liên quan (relatedTypes có thể là array). Tool này tối ưu cho query kiểu "tìm A gần/trong/có B (và C, D...)". Lưu ý: relationship="isNextTo" (mặc định) bao gồm cả isNextTo và containedInPlace để cover khái niệm "gần".',
+    description: 'Tìm địa điểm có quan hệ topology với địa điểm khác. Ví dụ: tìm quán ăn gần trạm sạc, cafe trong công viên, bệnh viện có bãi đỗ xe. Hỗ trợ nhiều loại địa điểm liên quan (relatedTypes có thể là array). Tool này tối ưu cho query kiểu "tìm A gần/trong/có B (và C, D...)". Lưu ý: relationship="isNextTo" (mặc định) bao gồm cả isNextTo và containedInPlace để cover khái niệm "gần". **KẾT QUẢ BAO GỒM DỮ LIỆU CẢM BIẾN**: sensorData với aqi (chỉ số chất lượng không khí 0-500, thấp=tốt), temperature (nhiệt độ °C), noise_level (độ ồn dB). Dùng minAqi/maxAqi để lọc theo chất lượng không khí.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -1171,6 +1740,8 @@ export class FusekiService implements OnModuleInit {
           type: SchemaType.STRING, 
           description: 'Loại quan hệ: "isNextTo" (bên cạnh), "containedInPlace" (trong khu vực), "amenityFeature" (có tiện ích). Mặc định: "isNextTo"'
         },
+        minAqi: { type: SchemaType.NUMBER, description: 'AQI tối thiểu để lọc (0-500)' },
+        maxAqi: { type: SchemaType.NUMBER, description: 'AQI tối đa để lọc. Dùng maxAqi=50 cho không khí tốt, maxAqi=100 cho trung bình.' },
         limit: { type: SchemaType.NUMBER, description: 'Số kết quả tối đa (mặc định 50)' },
       },
       required: ['lon', 'lat', 'radiusKm', 'targetType', 'relatedTypes'],
@@ -1183,10 +1754,13 @@ export class FusekiService implements OnModuleInit {
     targetType: string;
     relatedTypes: string[];
     relationship?: string;
+    minAqi?: number;           // Lọc AQI tối thiểu
+    maxAqi?: number;           // Lọc AQI tối đa
     limit?: number;
   }) {
     const { lon, lat, radiusKm, targetType, relatedTypes } = params;
     const relationship = params.relationship || 'isNextTo';
+    const hasAqiFilter = params.minAqi !== undefined || params.maxAqi !== undefined;
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
 
     const relationshipTypes = relationship === 'isNextTo' 
@@ -1199,7 +1773,7 @@ export class FusekiService implements OnModuleInit {
       lon, lat, radiusKm,
       types: [targetType],
       includeTopology: false,
-      limit: limit * 2, // Query nhiều hơn để sau khi filter còn đủ
+      limit: hasAqiFilter ? limit * 4 : limit * 2, // Query nhiều hơn nếu có AQI filter
     });
 
     if (targetResults.count === 0) {
@@ -1332,11 +1906,19 @@ export class FusekiService implements OnModuleInit {
 
     this.logger.debug(`Filtered down to ${filteredItems.length} ${targetType} with topology relationships`);
 
-    // Enrich với thông tin related entity (đầy đủ thông tin POI)
+    // Enrich với thông tin related entity (đầy đủ thông tin POI) - deduplicate
     const relatedMap = new Map(relatedResults.items.map(r => [r.poi, r]));
     const enrichedItems = filteredItems.map(item => {
+      // Deduplicate related entities theo URI
+      const seenRelated = new Set<string>();
       const relatedEntities = topologyRows
         .filter(r => r.targetPoi === item.poi)
+        .filter(r => {
+          // Chỉ giữ lại related POI đầu tiên, bỏ qua duplicates
+          if (seenRelated.has(r.relatedPoi)) return false;
+          seenRelated.add(r.relatedPoi);
+          return true;
+        })
         .map(r => {
           const related = relatedMap.get(r.relatedPoi);
           return related ? {
@@ -1351,12 +1933,14 @@ export class FusekiService implements OnModuleInit {
             lon: related.lon,
             lat: related.lat,
             distanceKm: related.distanceKm,
+            device: (related as any).device || null,
           } : {
             poi: r.relatedPoi,
             name: null,
             lon: null,
             lat: null,
             distanceKm: null,
+            device: null,
           };
         });
 
@@ -1366,7 +1950,91 @@ export class FusekiService implements OnModuleInit {
       };
     });
 
-    this.logger.debug(`Found ${enrichedItems.length} ${targetType} with [${relationshipTypes.join('+')}] relationships to [${relatedTypes.join(', ')}]`);
+    // Fetch device IDs for enriched items from iot-coverage graph
+    const allPoiUris = enrichedItems.map(item => `<${item.poi}>`);
+    const allRelatedUris = enrichedItems.flatMap(item => 
+      item.relatedEntities.map(re => `<${re.poi}>`)
+    );
+    const allUris = [...new Set([...allPoiUris, ...allRelatedUris])].join(' ');
+    
+    if (allUris.length > 0) {
+      const iotCoverageGraphUri = this.configService.get<string>('FUSEKI_GRAPH_IOT_COVERAGE') || 'http://localhost:3030/graph/iot-coverage';
+      
+      const deviceQuery = `
+        PREFIX sosa: <http://www.w3.org/ns/sosa/>
+        
+        SELECT ?poi ?device
+        WHERE {
+          GRAPH <${iotCoverageGraphUri}> {
+            VALUES ?poi { ${allUris} }
+            ?poi sosa:isSampledBy ?device .
+          }
+        }
+      `;
+      
+      try {
+        const deviceRows = await this.runSelect(deviceQuery);
+        const deviceMap = new Map<string, string>();
+        
+        deviceRows.forEach(row => {
+          deviceMap.set(row.poi, row.device);
+        });
+        
+        // Update enriched items with device URIs
+        enrichedItems.forEach(item => {
+          (item as any).device = deviceMap.get(item.poi) || null;
+          item.relatedEntities.forEach((re: any) => {
+            re.device = deviceMap.get(re.poi) || null;
+          });
+        });
+        
+        this.logger.debug(`Found device mappings for ${deviceMap.size} POIs in searchNearbyWithTopology`);
+      } catch (e: any) {
+        this.logger.warn('Failed to fetch device mappings in searchNearbyWithTopology: ' + e.message);
+      }
+    }
+
+    // Fetch sensor data for enriched items
+    const poiDeviceMap = new Map<string, string>();
+    enrichedItems.forEach(item => {
+      if ((item as any).device) {
+        poiDeviceMap.set(item.poi, (item as any).device);
+      }
+    });
+    
+    if (poiDeviceMap.size > 0) {
+      try {
+        const sensorDataMap = await this.fetchSensorDataForDevices(poiDeviceMap);
+        
+        enrichedItems.forEach(item => {
+          (item as any).sensorData = sensorDataMap.get(item.poi) || null;
+        });
+        
+        this.logger.debug(`Fetched sensor data for ${sensorDataMap.size} POIs in searchNearbyWithTopology`);
+      } catch (e: any) {
+        this.logger.warn('Failed to fetch sensor data in searchNearbyWithTopology: ' + e.message);
+      }
+    }
+
+    // Filter by AQI if requested
+    let finalItems = enrichedItems;
+    if (hasAqiFilter) {
+      const beforeFilter = finalItems.length;
+      finalItems = finalItems.filter(item => {
+        const sensorData = (item as any).sensorData;
+        if (!sensorData || sensorData.aqi === null || sensorData.aqi === undefined) {
+          return false;
+        }
+        const aqi = sensorData.aqi;
+        if (params.minAqi !== undefined && aqi < params.minAqi) return false;
+        if (params.maxAqi !== undefined && aqi > params.maxAqi) return false;
+        return true;
+      }).slice(0, limit);
+      
+      this.logger.debug(`AQI filter in searchNearbyWithTopology: ${beforeFilter} -> ${finalItems.length}`);
+    }
+
+    this.logger.debug(`Found ${finalItems.length} ${targetType} with [${relationshipTypes.join('+')}] relationships to [${relatedTypes.join(', ')}]`);
 
     return {
       center: { lon, lat },
@@ -1374,8 +2042,8 @@ export class FusekiService implements OnModuleInit {
       targetType,
       relatedTypes,
       relationship,
-      count: enrichedItems.length,
-      items: enrichedItems,
+      count: finalItems.length,
+      items: finalItems,
     };
   }
 

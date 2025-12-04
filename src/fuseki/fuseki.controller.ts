@@ -124,4 +124,36 @@ export class FusekiController {
       );
     }
   }
+
+  @Post('device-locations')
+  async getDeviceLocations(
+    @Body('deviceUris') deviceUris?: string[],
+  ) {
+    try {
+      if (!deviceUris || deviceUris.length === 0) {
+        throw new BadRequestException('deviceUris array is required');
+      }
+      
+      const data = await this.fusekiService.getDeviceLocations(deviceUris);
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get device locations failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get('iot-stations')
+  async getAllIoTStations() {
+    try {
+      const data = await this.fusekiService.getAllIoTStations();
+      return data;
+    } catch (e: any) {
+      throw new HttpException(
+        { message: 'Get IoT stations failed', error: e.message },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
 }

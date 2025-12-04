@@ -51,6 +51,11 @@ export class ChatbotService implements OnModuleInit {
                                       - \`containedInPlace\`: Places within an area (e.g., "cafes in a mall")
                                       - \`amenityFeature\`: Facilities/amenities (e.g., "hospitals with parking")
                                       Use these relationships to provide better recommendations for queries like "find restaurants near charging stations".
+                                    * **SENSOR DATA & AIR QUALITY**: Search results include real-time sensor data:
+                                      - \`sensorData.aqi\`: Air Quality Index (0-500). Lower = better. 0-50=Tốt, 51-100=Trung bình, 101-150=Kém, 151-200=Xấu, >200=Nguy hiểm
+                                      - \`sensorData.temperature\`: Temperature in Celsius
+                                      - \`sensorData.noise_level\`: Noise level in dB
+                                      Use minAqi/maxAqi parameters to filter by air quality. Example: maxAqi=50 for "good air quality", maxAqi=100 for "acceptable air quality".
                                 2.  **Conversational Companion:**
                                     * Engage in polite, casual small talk (greetings, asking about the user's day).
 
@@ -75,6 +80,13 @@ export class ChatbotService implements OnModuleInit {
                                 ### TOOL SELECTION GUIDE
                                 Choose the right search tool based on query type:
                                 
+                                **SENSOR DATA & AIR QUALITY QUERIES:**
+                                When user asks about air quality, use minAqi/maxAqi parameters:
+                                * "không khí tốt", "chất lượng không khí tốt", "good air quality" → maxAqi=50
+                                * "không khí trung bình", "acceptable air quality" → maxAqi=100
+                                * "không khí trong lành", "clean air" → maxAqi=50
+                                * Always include sensorData info in response when available
+                                
                                 **Use searchNearbyWithTopology when:**
                                 * Query follows pattern "find A near/in/with B (and C, D...)" (e.g., "restaurants near charging stations and ATMs", "cafes in parks", "hospitals with parking")
                                 * User explicitly mentions relationships between two or more types of places
@@ -93,6 +105,7 @@ export class ChatbotService implements OnModuleInit {
                                   - targetType (A), relatedTypes (array of B, C, D...)
                                   - radiusKm (default 1km)
                                   - relationship: "isNextTo" for "near" (includes both isNextTo and containedInPlace), "containedInPlace" for "in", "amenityFeature" for "with"
+                                  - minAqi/maxAqi: Filter by air quality (optional)
                                   - Default relationship is "isNextTo" which covers most "nearby" queries
                                 
                                 **Use searchNearby when:**
@@ -111,9 +124,14 @@ export class ChatbotService implements OnModuleInit {
                                   - lon, lat (REQUIRED - MUST be from fetchGeocodeByName if location mentioned, or context.currentLocation)
                                   - types[] (one or more types)
                                   - radiusKm (default 1km)
+                                  - minAqi/maxAqi: Filter by air quality (optional)
                                   - includeTopology=true for enriched data
                                 
                                 **Examples:**
+                                * "Tìm quán cafe gần tôi có chất lượng không khí tốt" →
+                                  searchNearby(lon=context.lon, lat=context.lat, types=['cafe'], maxAqi=50, radiusKm=2)
+                                * "Tìm nhà hàng không khí trong lành gần đây" →
+                                  searchNearby(lon=context.lon, lat=context.lat, types=['restaurant'], maxAqi=50)
                                 * "Tìm công viên gần trạm xe buýt ở Hồ Hoàn Kiếm" → 
                                   1. FIRST: fetchGeocodeByName(name="Hồ Hoàn Kiếm") to get lat/lon
                                   2. THEN: searchNearbyWithTopology(lon=105.852, lat=21.028, targetType='park', relatedTypes=['bus_stop'], relationship='isNextTo', radiusKm=1)
