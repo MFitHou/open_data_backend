@@ -53,7 +53,7 @@ export class FusekiController {
   ) {
     try {
       if (!lon || !lat || !radiusKm) {
-        throw new BadRequestException('lon, lat, radiusKm bắt buộc');
+        throw new BadRequestException('lon, lat, radiusKm are required');
       }
       
       const typesArray = types ? types.split(',').map(t => t.trim()).filter(Boolean) : undefined;
@@ -66,7 +66,7 @@ export class FusekiController {
         includeTopology: includeTopology === 'true',
         includeIoT: includeIoT === 'true',
         limit: limit ? parseInt(limit, 10) : 50,
-        language: language || 'vi',
+        language: language || 'en',
       });
       return data;
     } catch (e: any) {
@@ -91,7 +91,7 @@ export class FusekiController {
       const data = await this.fusekiService.getPOIsByType({
         type: type.trim(),
         limit: limit ? parseInt(limit, 10) : 100,
-        language: language || 'vi',
+        language: language || 'en',
       });
       return data;
     } catch (e: any) {
@@ -114,7 +114,7 @@ export class FusekiController {
       
       const data = await this.fusekiService.getPOIByUri({
         uri: uri.trim(),
-        language: language || 'vi',
+        language: language || 'en',
       });
       return data;
     } catch (e: any) {

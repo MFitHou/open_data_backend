@@ -165,10 +165,10 @@ export class FusekiService implements OnModuleInit {
     try {
       this.logger.log('Fuseki query endpoint: ' + this.queryEndpoint);
       if (!this.queryEndpoint) {
-        this.logger.error('Thiếu FUSEKI_QUERY_ENDPOINT');
+        this.logger.error('Missing FUSEKI_QUERY_ENDPOINT');
         return;
       }
-      // Kiểm tra graph list (chỉ log, không chặn)
+      // Check graph list (log only, non-blocking)
       await this.listGraphs();
     } catch (e: any) {
       this.logger.warn('Init fuseki skip: ' + e.message);
@@ -197,7 +197,7 @@ export class FusekiService implements OnModuleInit {
     limit?: number;
     language?: string;
   }) {
-    const { language = 'vi' } = params;
+    const { language = 'en' } = params;
     const type = this.convertToSchemaType(params.type);
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 2000);
 
@@ -307,12 +307,12 @@ export class FusekiService implements OnModuleInit {
       };
     });
 
-    // Fetch topology relationships cho tất cả POIs
+    // Fetch topology relationships for all POIs
     if (results.length > 0) {
       const poiUris = results.map(r => `<${r.poi}>`).join(' ');
       const topologyGraphUri = this.configService.get<string>('FUSEKI_GRAPH_TOPOLOGY') || 'http://localhost:3030/graph/topology';
       
-      // Xác định language tag ưu tiên
+      // Determine language tag priority
       const langPriority = language === 'vi' ? ['vi', 'en', ''] : ['en', 'vi', ''];
       
       const topologyQuery = `
@@ -462,7 +462,7 @@ export class FusekiService implements OnModuleInit {
             }
           }
           
-          // Parse type từ URI nếu không có trong data
+          // Parse type from URI if not in data
           // URI format: urn:ngsi-ld:PointOfInterest:Hanoi:<type>:<id>
           let parsedAmenity = row.relatedAmenity || null;
           let parsedHighway = row.relatedHighway || null;
@@ -477,7 +477,7 @@ export class FusekiService implements OnModuleInit {
             }
           }
           
-          // Tạo object topology với đầy đủ thông tin
+          // Create topology object with full information
           const topologyItem: any = {
             predicate: row.predicate,
             related: {
@@ -497,7 +497,7 @@ export class FusekiService implements OnModuleInit {
           topologyMap.get(row.poi)!.push(topologyItem);
         });
         
-        // Gán topology vào results
+        // Assign topology to results
         results.forEach(r => {
           r.topology = topologyMap.get(r.poi) || [];
         });
@@ -582,7 +582,7 @@ export class FusekiService implements OnModuleInit {
    */
   async getPOIByUri(params: { uri: string; language?: string }) {
     const { uri } = params;
-    const language = params.language || 'vi';
+    const language = params.language || 'en';
     
     if (!uri || !uri.trim()) {
       throw new BadRequestException('uri is required');
@@ -590,7 +590,7 @@ export class FusekiService implements OnModuleInit {
     
     this.logger.debug(`[getPOIByUri] Fetching POI: ${uri}`);
     
-    // Query để lấy thông tin POI
+    // Query to get POI information
     const query = `
       PREFIX ext: <http://opendatafithou.org/def/extension/>
       PREFIX geo: <http://www.opengis.net/ont/geosparql#>
@@ -1048,19 +1048,19 @@ export class FusekiService implements OnModuleInit {
     }
   }
 
-  // PUBLIC: thực thi SELECT do client cung cấp
+  // PUBLIC: Execute SELECT query provided by client
   async executeSelect(query: string) {
     if (!query || !query.trim()) {
-      throw new BadRequestException('Query rỗng');
+      throw new BadRequestException('Query is empty');
     }
 
     console.log('Original query:', query);
     const cleaned = query.trim();
 
-    // Tìm từ khóa SELECT (không phân biệt hoa thường) sau các dòng PREFIX
+    // Find SELECT keyword (case insensitive) after PREFIX lines
     const hasSelect = /\bSELECT\b/i.test(cleaned);
     if (!hasSelect) {
-      throw new BadRequestException('Chỉ hỗ trợ SELECT SPARQL');
+      throw new BadRequestException('Only SELECT SPARQL queries are supported');
     }
 
     console.log('Cleaned query:', cleaned);
@@ -1070,18 +1070,18 @@ export class FusekiService implements OnModuleInit {
 
   @ChatTool({
     name: 'searchNearby',
-    description: 'Tìm các POI (điểm quan tâm) gần vị trí kinh độ/vĩ độ cho trước. Hỗ trợ 27+ loại dịch vụ: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Có thể tìm nhiều loại cùng lúc. Tự động bao gồm thông tin topology relationships (địa điểm liên quan). **KẾT QUẢ BAO GỒM DỮ LIỆU CẢM BIẾN**: sensorData với aqi (chỉ số chất lượng không khí 0-500, thấp=tốt), temperature (nhiệt độ °C), noise_level (độ ồn dB). Dùng minAqi/maxAqi để lọc theo chất lượng không khí (ví dụ: maxAqi=50 = không khí tốt, maxAqi=100 = trung bình).',
+    description: 'Search for POIs (points of interest) near a given longitude/latitude location. Supports 27+ service types: atm, bank, school, drinking_water, bus_stop, playground, toilets, hospital, post_office, park, parking, library, charging_station, waste_basket, fuel_station, community_centre, supermarket, police, pharmacy, fire_station, restaurant, university, convenience_store, marketplace, cafe, warehouse, clinic, kindergarten. Can search multiple types at once. Automatically includes topology relationships information (related places). **RESULTS INCLUDE SENSOR DATA**: sensorData with aqi (air quality index 0-500, lower=better), temperature (°C), noise_level (dB). Use minAqi/maxAqi to filter by air quality (e.g., maxAqi=50 = good air, maxAqi=100 = moderate).',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ của vị trí trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ của vị trí trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        types: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Danh sách loại dịch vụ cần tìm (atm, hospital, school, cafe, bus_stop, playground, restaurant, charging_station, etc.). Để trống để tìm tất cả.' },
-        includeIoT: { type: SchemaType.BOOLEAN, description: 'Bao gồm thông tin trạm cảm biến IoT phủ sóng. Mặc định: false.' },
-        minAqi: { type: SchemaType.NUMBER, description: 'AQI tối thiểu để lọc (0-500). Chỉ trả về địa điểm có aqi >= minAqi.' },
-        maxAqi: { type: SchemaType.NUMBER, description: 'AQI tối đa để lọc (0-500). Dùng maxAqi=50 cho không khí tốt, maxAqi=100 cho không khí trung bình.' },
-        limit: { type: SchemaType.NUMBER, description: 'Số POI tối đa trả về (mặc định 150)' },
+        lon: { type: SchemaType.NUMBER, description: 'Longitude of center location' },
+        lat: { type: SchemaType.NUMBER, description: 'Latitude of center location' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Search radius (km)' },
+        types: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'List of service types to search (atm, hospital, school, cafe, bus_stop, playground, restaurant, charging_station, etc.). Leave empty to search all.' },
+        includeIoT: { type: SchemaType.BOOLEAN, description: 'Include IoT sensor coverage information. Default: false.' },
+        minAqi: { type: SchemaType.NUMBER, description: 'Minimum AQI filter (0-500). Only returns places with aqi >= minAqi.' },
+        maxAqi: { type: SchemaType.NUMBER, description: 'Maximum AQI filter (0-500). Use maxAqi=50 for good air, maxAqi=100 for moderate air.' },
+        limit: { type: SchemaType.NUMBER, description: 'Maximum POIs to return (default 150)' },
       },
       required: ['lon', 'lat', 'radiusKm'],
     },
@@ -1090,27 +1090,27 @@ export class FusekiService implements OnModuleInit {
     lon: number;
     lat: number;
     radiusKm: number;
-    types?: string[];          // Danh sách loại dịch vụ (atm, hospital, school, cafe, bus_stop, playground, etc.)
-    includeTopology?: boolean; // thêm thông tin topology relationships
-    includeIoT?: boolean;      // thêm thông tin IoT coverage
-    minAqi?: number;           // Lọc AQI tối thiểu
-    maxAqi?: number;           // Lọc AQI tối đa (ví dụ: 50 = không khí tốt)
+    types?: string[];          // List of service types (atm, hospital, school, cafe, bus_stop, playground, etc.)
+    includeTopology?: boolean; // Include topology relationships info
+    includeIoT?: boolean;      // Include IoT coverage info
+    minAqi?: number;           // Minimum AQI filter
+    maxAqi?: number;           // Maximum AQI filter (e.g., 50 = good air)
     limit?: number;
-    language?: string;         // Ngôn ngữ: 'vi', 'en', 'all' (mặc định: 'vi')
+    language?: string;         // Language: 'vi', 'en', 'all' (default: 'en')
   }) {
     const { lon, lat, radiusKm } = params;
     if (
       lon === undefined || lat === undefined ||
       Number.isNaN(lon) || Number.isNaN(lat)
-    ) throw new BadRequestException('Thiếu hoặc sai lon/lat');
-    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm phải > 0');
+    ) throw new BadRequestException('Missing or invalid lon/lat');
+    if (!radiusKm || radiusKm <= 0) throw new BadRequestException('radiusKm must be > 0');
 
-    // Tăng limit internal nếu có filter AQI để có đủ kết quả sau khi filter
+    // Increase internal limit if AQI filter is applied to have enough results after filtering
     const hasAqiFilter = params.minAqi !== undefined || params.maxAqi !== undefined;
     const internalLimit = hasAqiFilter ? 300 : Math.min(Math.max(params.limit ?? 100, 1), 100);
     const outputLimit = Math.min(Math.max(params.limit ?? 100, 1), 100);
     
-    // Luôn bật topology cho tất cả queries, IoT tùy chọn
+    // Always enable topology for all queries, IoT is optional
     const includeTopology = true; // Always true
     const includeIoT = params.includeIoT === true; // Default: false
 
@@ -1125,7 +1125,7 @@ export class FusekiService implements OnModuleInit {
 
     const types = (params.types || []).map(t => t.trim().toLowerCase()).filter(Boolean);
     
-    // Map types to graph URIs (hỗ trợ cả số ít và số nhiều)
+    // Map types to graph URIs (supports both singular and plural)
     const typeToGraphMap: Record<string, string> = {
       'atm': this.configService.get<string>('FUSEKI_GRAPH_ATM') || 'http://localhost:3030/graph/atm',
       'atms': this.configService.get<string>('FUSEKI_GRAPH_ATM') || 'http://localhost:3030/graph/atm',
@@ -1251,9 +1251,9 @@ export class FusekiService implements OnModuleInit {
             BIND(xsd:double(?latStr) AS ?lat)
             
             # Ưu tiên lấy giá trị tiếng Việt, nếu không có thì lấy giá trị không có language tag, cuối cùng là bất kỳ giá trị nào
-            BIND(IF(BOUND(?schemaNameRaw) && LANG(?schemaNameRaw) = "vi", ?schemaNameRaw,
+            BIND(IF(BOUND(?schemaNameRaw) && LANG(?schemaNameRaw) = "en", ?schemaNameRaw,
                     IF(BOUND(?schemaNameRaw) && LANG(?schemaNameRaw) = "", ?schemaNameRaw, ?schemaNameRaw)) AS ?schemaName)
-            BIND(IF(BOUND(?labelRaw) && LANG(?labelRaw) = "vi", ?labelRaw,
+            BIND(IF(BOUND(?labelRaw) && LANG(?labelRaw) = "en", ?labelRaw,
                     IF(BOUND(?labelRaw) && LANG(?labelRaw) = "", ?labelRaw, ?labelRaw)) AS ?label)
             BIND(COALESCE(?schemaName, ?label) AS ?name)
             
@@ -1272,8 +1272,8 @@ export class FusekiService implements OnModuleInit {
     
     this.logger.debug(`Found ${rows.length} raw results from SPARQL query`);
 
-    // Xác định ngôn ngữ mong muốn (mặc định: 'vi')
-    const language = (params.language || 'vi').toLowerCase();
+    // Determine desired language (default: 'en')
+    const language = (params.language || 'en').toLowerCase();
     this.logger.debug(`Language preference: ${language}`);
 
     // Deduplicate POIs - ưu tiên ngôn ngữ được chỉ định
@@ -1402,7 +1402,7 @@ export class FusekiService implements OnModuleInit {
             GRAPH ?g {
               {
                 ?related schema:name ?relatedNameVi .
-                FILTER(LANG(?relatedNameVi) = "vi")
+                FILTER(LANG(?relatedNameVi) = "en")
               }
             }
           }
@@ -1425,7 +1425,7 @@ export class FusekiService implements OnModuleInit {
             GRAPH ?g4 {
               {
                 ?related rdfs:label ?relatedLabelVi .
-                FILTER(LANG(?relatedLabelVi) = "vi")
+                FILTER(LANG(?relatedLabelVi) = "en")
               }
             }
           }
@@ -1727,22 +1727,22 @@ export class FusekiService implements OnModuleInit {
 
   @ChatTool({
     name: 'searchNearbyWithTopology',
-    description: 'Tìm địa điểm có quan hệ topology với địa điểm khác. Ví dụ: tìm quán ăn gần trạm sạc, cafe trong công viên, bệnh viện có bãi đỗ xe. Hỗ trợ nhiều loại địa điểm liên quan (relatedTypes có thể là array). Tool này tối ưu cho query kiểu "tìm A gần/trong/có B (và C, D...)". Lưu ý: relationship="isNextTo" (mặc định) bao gồm cả isNextTo và containedInPlace để cover khái niệm "gần". **KẾT QUẢ BAO GỒM DỮ LIỆU CẢM BIẾN**: sensorData với aqi (chỉ số chất lượng không khí 0-500, thấp=tốt), temperature (nhiệt độ °C), noise_level (độ ồn dB). Dùng minAqi/maxAqi để lọc theo chất lượng không khí.',
+    description: 'Search for places with topology relationships to other places. Examples: find restaurants near charging stations, cafes in parks, hospitals with parking. Supports multiple related place types (relatedTypes can be an array). This tool is optimized for queries like "find A near/in/with B (and C, D...)". Note: relationship="isNextTo" (default) includes both isNextTo and containedInPlace to cover the concept of "near". **RESULTS INCLUDE SENSOR DATA**: sensorData with aqi (air quality index 0-500, lower=better), temperature (°C), noise_level (dB). Use minAqi/maxAqi to filter by air quality.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        lon: { type: SchemaType.NUMBER, description: 'Kinh độ trung tâm' },
-        lat: { type: SchemaType.NUMBER, description: 'Vĩ độ trung tâm' },
-        radiusKm: { type: SchemaType.NUMBER, description: 'Bán kính tìm kiếm (km)' },
-        targetType: { type: SchemaType.STRING, description: 'Loại địa điểm cần tìm (restaurant, cafe, hospital, school, etc.)' },
-        relatedTypes: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Danh sách loại địa điểm liên quan (charging_station, parking, bus_stop, atm, etc.). Có thể là 1 hoặc nhiều types.' },
+        lon: { type: SchemaType.NUMBER, description: 'Center longitude' },
+        lat: { type: SchemaType.NUMBER, description: 'Center latitude' },
+        radiusKm: { type: SchemaType.NUMBER, description: 'Search radius (km)' },
+        targetType: { type: SchemaType.STRING, description: 'Type of place to search for (restaurant, cafe, hospital, school, etc.)' },
+        relatedTypes: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'List of related place types (charging_station, parking, bus_stop, atm, etc.). Can be 1 or more types.' },
         relationship: { 
           type: SchemaType.STRING, 
-          description: 'Loại quan hệ: "isNextTo" (bên cạnh), "containedInPlace" (trong khu vực), "amenityFeature" (có tiện ích). Mặc định: "isNextTo"'
+          description: 'Relationship type: "isNextTo" (adjacent), "containedInPlace" (within area), "amenityFeature" (has amenity). Default: "isNextTo"'
         },
-        minAqi: { type: SchemaType.NUMBER, description: 'AQI tối thiểu để lọc (0-500)' },
-        maxAqi: { type: SchemaType.NUMBER, description: 'AQI tối đa để lọc. Dùng maxAqi=50 cho không khí tốt, maxAqi=100 cho trung bình.' },
-        limit: { type: SchemaType.NUMBER, description: 'Số kết quả tối đa (mặc định 50)' },
+        minAqi: { type: SchemaType.NUMBER, description: 'Minimum AQI filter (0-500)' },
+        maxAqi: { type: SchemaType.NUMBER, description: 'Maximum AQI filter. Use maxAqi=50 for good air, maxAqi=100 for moderate.' },
+        limit: { type: SchemaType.NUMBER, description: 'Maximum results (default 50)' },
       },
       required: ['lon', 'lat', 'radiusKm', 'targetType', 'relatedTypes'],
     },

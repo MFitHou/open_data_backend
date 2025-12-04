@@ -230,7 +230,7 @@ export class WikidataService {
 
   @ChatTool({
     name: 'searchInforByName',
-    description: 'Tìm kiếm địa điểm trên Wikidata dựa trên từ khóa và trả về danh sách kết quả với thông tin chi tiết.',
+    description: 'Search for places on Wikidata based on keywords and return a list of results with detailed information.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
