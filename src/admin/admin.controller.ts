@@ -109,19 +109,25 @@ export class AdminController {
   /**
    * GET /admin/pois
    * Lấy danh sách POIs từ Named Graphs với filter
-   * Query params: type (school, bus-stop, play-ground, drinking-water, toilet, all), page, limit
+   * Query params: 
+   *   - type: loại POI (school, bus-stop, hospital, etc. hoặc 'all')
+   *   - page: số trang (default 1)
+   *   - limit: số items per page (default 10, max 100)
+   *   - lightweight: true/false - chỉ lấy fields cần thiết cho map (default false)
    */
   @Get('pois')
   async getPois(
     @Query('type') type?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('lightweight') lightweight?: string,
   ) {
     try {
       const pageNum = page ? parseInt(page, 10) : 1;
       const limitNum = limit ? parseInt(limit, 10) : 10;
+      const isLightweight = lightweight === 'true' || lightweight === '1';
 
-      const result = await this.adminService.getPois(type, pageNum, limitNum);
+      const result = await this.adminService.getPois(type, pageNum, limitNum, isLightweight);
       return result;
     } catch (error) {
       throw new HttpException(
