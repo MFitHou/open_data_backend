@@ -44,7 +44,15 @@ export class SmartSearchService {
 
       const prompt = this.buildSearchPrompt(query, context);
       
-      const result = await this.chatbotService.ChatFunctionCalling(prompt);
+      // Truyền context với currentLocation cho ChatFunctionCalling
+      const chatContext = context?.currentLocation ? {
+        currentLocation: {
+          lat: context.currentLocation.lat,
+          lon: context.currentLocation.lon
+        }
+      } : undefined;
+      
+      const result = await this.chatbotService.ChatFunctionCalling(prompt, chatContext);
 
       const parsedResult = this.parseSearchResult(result, context);
       
@@ -197,8 +205,7 @@ export class SmartSearchService {
           center,
           radiusKm
         },
-        results: nearbyResults,
-        suggestions: this.rankSuggestions(nearbyResults).slice(0, 5)
+        results: nearbyResults
       };
     }
 
