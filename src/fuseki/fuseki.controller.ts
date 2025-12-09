@@ -23,18 +23,6 @@ import { SparqlQueryDto } from './dto/SparqlQueryDto';
 export class FusekiController {
   constructor(private readonly fusekiService: FusekiService) {}
 
-  @Get('atms')
-  async getAllATMs() {
-    try {
-      const rows = await this.fusekiService.queryAllATMs();
-      return { count: rows.length, data: rows };
-    } catch (e: any) {
-      throw new HttpException(
-        { message: 'Query Fuseki failed', error: e.message },
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-  }
 
   @Post('query')
   async runQuery(@Body('query') query?: SparqlQueryDto['query']) {
@@ -52,131 +40,118 @@ export class FusekiController {
     }
   }
 
-  @Get('atms/nearby')
-  async atmsNearby(
+  @Get('nearby')
+  async searchNearby(
     @Query('lon') lon?: string,
     @Query('lat') lat?: string,
     @Query('radiusKm') radiusKm?: string,
+    @Query('types') types?: string,
+    @Query('includeTopology') includeTopology?: string,
+    @Query('includeIoT') includeIoT?: string,
     @Query('limit') limit?: string,
+    @Query('language') language?: string,
   ) {
     try {
       if (!lon || !lat || !radiusKm) {
         throw new BadRequestException('lon, lat, radiusKm bắt buộc');
       }
-      const data = await this.fusekiService.searchATMsNearby({
+      
+      const typesArray = types ? types.split(',').map(t => t.trim()).filter(Boolean) : undefined;
+      
+      const data = await this.fusekiService.searchNearby({
         lon: parseFloat(lon),
         lat: parseFloat(lat),
         radiusKm: parseFloat(radiusKm),
-        limit: limit ? parseInt(limit, 10) : undefined,
+        types: typesArray,
+        includeTopology: includeTopology === 'true',
+        includeIoT: includeIoT === 'true',
+        limit: limit ? parseInt(limit, 10) : 50,
+        language: language || 'vi',
       });
       return data;
     } catch (e: any) {
       throw new HttpException(
-        { message: 'ATMs nearby query failed', error: e.message },
+        { message: 'Search nearby query failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }
   }
 
-  @Get('playgrounds/nearby')
-  async playgroundsNearby(
-    @Query('lon') lon?: string,
-    @Query('lat') lat?: string,
-    @Query('radiusKm') radiusKm?: string,
+  @Get('pois-by-type')
+  async getPOIsByType(
+    @Query('type') type?: string,
     @Query('limit') limit?: string,
+    @Query('language') language?: string,
   ) {
     try {
-      if (!lon || !lat || !radiusKm) {
-        throw new BadRequestException('lon, lat, radiusKm bắt buộc');
+      if (!type) {
+        throw new BadRequestException('type parameter is required');
       }
-      const data = await this.fusekiService.searchPlaygroundsNearby({
-        lon: parseFloat(lon),
-        lat: parseFloat(lat),
-        radiusKm: parseFloat(radiusKm),
-        limit: limit ? parseInt(limit, 10) : undefined,
+      
+      const data = await this.fusekiService.getPOIsByType({
+        type: type.trim(),
+        limit: limit ? parseInt(limit, 10) : 100,
+        language: language || 'vi',
       });
       return data;
     } catch (e: any) {
       throw new HttpException(
-        { message: 'Playgrounds nearby query failed', error: e.message },
+        { message: 'Get POIs by type failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }
   }
 
-  @Get('hospitals/nearby')
-  async hospitalsNearby(
-    @Query('lon') lon?: string,
-    @Query('lat') lat?: string,
-    @Query('radiusKm') radiusKm?: string,
-    @Query('limit') limit?: string,
+  @Get('poi')
+  async getPOIByUri(
+    @Query('uri') uri?: string,
+    @Query('language') language?: string,
   ) {
     try {
-      if (!lon || !lat || !radiusKm) {
-        throw new BadRequestException('lon, lat, radiusKm bắt buộc');
+      if (!uri) {
+        throw new BadRequestException('uri parameter is required');
       }
-      const data = await this.fusekiService.searchHospitalsNearby({
-        lon: parseFloat(lon),
-        lat: parseFloat(lat),
-        radiusKm: parseFloat(radiusKm),
-        limit: limit ? parseInt(limit, 10) : undefined,
+      
+      const data = await this.fusekiService.getPOIByUri({
+        uri: uri.trim(),
+        language: language || 'vi',
       });
       return data;
     } catch (e: any) {
       throw new HttpException(
-        { message: 'Hospitals nearby query failed', error: e.message },
+        { message: 'Get POI by URI failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }
   }
 
-  @Get('toilets/nearby')
-  async toiletsNearby(
-    @Query('lon') lon?: string,
-    @Query('lat') lat?: string,
-    @Query('radiusKm') radiusKm?: string,
-    @Query('limit') limit?: string,
+  @Post('device-locations')
+  async getDeviceLocations(
+    @Body('deviceUris') deviceUris?: string[],
   ) {
     try {
-      if (!lon || !lat || !radiusKm) {
-        throw new BadRequestException('lon, lat, radiusKm bắt buộc');
+      if (!deviceUris || deviceUris.length === 0) {
+        throw new BadRequestException('deviceUris array is required');
       }
-      const data = await this.fusekiService.searchToiletsNearby({
-        lon: parseFloat(lon),
-        lat: parseFloat(lat),
-        radiusKm: parseFloat(radiusKm),
-        limit: limit ? parseInt(limit, 10) : undefined,
-      });
+      
+      const data = await this.fusekiService.getDeviceLocations(deviceUris);
       return data;
     } catch (e: any) {
       throw new HttpException(
-        { message: 'Toilets nearby query failed', error: e.message },
+        { message: 'Get device locations failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }
   }
 
-  @Get('bus-stops/nearby')
-  async busStopsNearby(
-    @Query('lon') lon?: string,
-    @Query('lat') lat?: string,
-    @Query('radiusKm') radiusKm?: string,
-    @Query('limit') limit?: string,
-  ) {
+  @Get('iot-stations')
+  async getAllIoTStations() {
     try {
-      if (!lon || !lat || !radiusKm) {
-        throw new BadRequestException('lon, lat, radiusKm bắt buộc');
-      }
-      const data = await this.fusekiService.searchBusStopsNearby({
-        lon: parseFloat(lon),
-        lat: parseFloat(lat),
-        radiusKm: parseFloat(radiusKm),
-        limit: limit ? parseInt(limit, 10) : undefined,
-      });
+      const data = await this.fusekiService.getAllIoTStations();
       return data;
     } catch (e: any) {
       throw new HttpException(
-        { message: 'Bus stops nearby query failed', error: e.message },
+        { message: 'Get IoT stations failed', error: e.message },
         HttpStatus.BAD_REQUEST,
       );
     }

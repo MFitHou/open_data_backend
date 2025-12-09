@@ -16,12 +16,31 @@
  */
 
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { FusekiModule } from './fuseki/fuseki.module';
+import { ChatbotModule } from './chatbot/chatbot.module';
+import { WikidataModule } from './wikidata/wikidata.module';
+import { OverpassModule } from './overpass/overpass.module';
+import { AdminModule } from './admin/admin.module';
+import { InfluxDBModule } from './influxdb/influxdb.module';
 
 @Module({
-  imports: [FusekiModule],
+  imports: [
+    ConfigModule.forRoot({
+      envFilePath: ['.env.development', '.env'],
+      isGlobal: true,
+    }),
+    ScheduleModule.forRoot(), // Enable cron jobs
+    FusekiModule,
+    ChatbotModule,
+    WikidataModule,
+    OverpassModule,
+    AdminModule,
+    InfluxDBModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

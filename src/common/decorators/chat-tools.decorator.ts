@@ -15,16 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { FusekiService } from './fuseki.service';
-import { FusekiController } from './fuseki.controller';
-import { InfluxDBModule } from '../influxdb/influxdb.module';
+import { SetMetadata } from '@nestjs/common';
+import { FunctionDeclaration } from '@google/generative-ai';
 
-@Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), InfluxDBModule],
-  providers: [FusekiService],
-  controllers: [FusekiController],
-  exports: [FusekiService],
-})
-export class FusekiModule {}
+export const CHAT_TOOL_METADATA = 'CHAT_TOOL_METADATA';
+
+// Decorator nhận vào schema định nghĩa tool
+export const ChatTool = (schema: FunctionDeclaration) => {
+  return SetMetadata(CHAT_TOOL_METADATA, schema);
+};
