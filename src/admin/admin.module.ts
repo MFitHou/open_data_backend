@@ -17,14 +17,14 @@
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { FusekiService } from './fuseki.service';
-import { FusekiController } from './fuseki.controller';
-import { InfluxDBModule } from '../influxdb/influxdb.module';
+import { AdminService } from './admin.service';
+import { AdminController } from './admin.controller';
+import { AdminFusekiService } from './admin-fuseki.service';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), InfluxDBModule],
-  providers: [FusekiService],
-  controllers: [FusekiController],
-  exports: [FusekiService],
+  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  providers: [AdminService, AdminFusekiService],
+  controllers: [AdminController],
+  exports: [AdminService],
 })
-export class FusekiModule {}
+export class AdminModule {}

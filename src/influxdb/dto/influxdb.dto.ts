@@ -15,16 +15,27 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { FusekiService } from './fuseki.service';
-import { FusekiController } from './fuseki.controller';
-import { InfluxDBModule } from '../influxdb/influxdb.module';
+export class GetLatestDto {
+  stationId: string;
+  measurement: string;
+  fields?: string[];
+}
 
-@Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), InfluxDBModule],
-  providers: [FusekiService],
-  controllers: [FusekiController],
-  exports: [FusekiService],
-})
-export class FusekiModule {}
+export class GetHistoryDto {
+  stationId: string;
+  measurement: string;
+  fields?: string[];
+  start: string;
+  stop?: string;
+  aggregateWindow?: string;
+}
+
+export class GetByDeviceDto {
+  deviceUri: string;
+  measurement?: string;
+  fields?: string[];
+}
+
+export class ExecuteQueryDto {
+  query: string;
+}

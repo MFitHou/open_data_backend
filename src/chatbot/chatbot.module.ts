@@ -17,14 +17,23 @@
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { FusekiService } from './fuseki.service';
-import { FusekiController } from './fuseki.controller';
-import { InfluxDBModule } from '../influxdb/influxdb.module';
+import { ChatbotService } from './chatbot.service';
+import { ChatbotController } from './chatbot.controller';
+import { SmartSearchService } from './smart-search.service';
+import { DiscoveryModule } from '@nestjs/core';
+import { ChatToolsRegistry } from './chat-tools.registry';
+import { WikidataModule } from '../wikidata/wikidata.module';
+import { OverpassModule } from '../overpass/overpass.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), InfluxDBModule],
-  providers: [FusekiService],
-  controllers: [FusekiController],
-  exports: [FusekiService],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }), 
+    DiscoveryModule,
+    WikidataModule,
+    OverpassModule
+  ],
+  providers: [ChatbotService, SmartSearchService, ChatToolsRegistry],
+  controllers: [ChatbotController],
+  exports: [ChatbotService, SmartSearchService],
 })
-export class FusekiModule {}
+export class ChatbotModule {}
