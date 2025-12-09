@@ -340,7 +340,7 @@ export class AdminService {
             <${poiUri}> a ${schemaType} , fiware:PointOfInterest ;
               ext:osm_id ${osmId} ;
               ext:osm_type "node" ;
-              schema:name "${escapedName}"@en ${escapedAddress ? `;
+              schema:name "${escapedName}"@vi ${escapedAddress ? `;
               schema:address "${escapedAddress}"` : ''} ;
               geo:asWKT "${wktString}"^^geo:wktLiteral .
           }
@@ -462,13 +462,15 @@ export class AdminService {
    * @param page - Trang hiện tại (mặc định: 1)
    * @param limit - Số lượng items mỗi trang (mặc định: 10)
    */
-  async getPois(type?: string, page: number = 1, limit: number = 10) {
+  async getPois(type?: string, page: number = 1, limit: number = 10, isLightweight: boolean = false) {
     try {
-      this.logger.log(`Fetching POIs: type=${type}, page=${page}, limit=${limit}`);
+      this.logger.log(`Fetching POIs: type=${type}, page=${page}, limit=${limit}, lightweight=${isLightweight}`);
 
-      // Validate pagination params
+      // Lightweight mode: lấy TẤT CẢ POIs không giới hạn (cho map display)
+      // Full mode: áp dụng pagination với limit (cho table/list)
+      const shouldPaginate = !isLightweight;
       const validPage = Math.max(1, page);
-      const validLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+      const validLimit = shouldPaginate ? Math.min(Math.max(1, limit), 100) : 10000; // Max 100 for pagination, 10000 for map
 
       // Map type to graph URL
       const graphMap = this.getGraphMap();
@@ -495,7 +497,7 @@ export class AdminService {
 
       for (const graphUrl of graphUrls) {
         try {
-          const pois = await this.fetchPoisFromGraph(graphUrl, validLimit * 2);
+          const pois = await this.fetchPoisFromGraph(graphUrl, validLimit * 2, isLightweight);
           allPois.push(...pois);
         } catch (err) {
           this.logger.warn(`Failed to fetch from graph ${graphUrl}: ${err.message}`);
@@ -503,20 +505,73 @@ export class AdminService {
         }
       }
 
-      // Sort by name and apply pagination
-      const sortedPois = allPois.sort((a, b) => a.name.localeCompare(b.name));
-      const startIndex = (validPage - 1) * validLimit;
-      const endIndex = startIndex + validLimit;
-      const paginatedPois = sortedPois.slice(startIndex, endIndex);
+      // Deduplicate POIs by ID (xử lý trường hợp schema:name có nhiều language tags)
+      const uniquePoisMap = new Map<string, any>();
+      
+      const isVietnamese = (str: string): boolean => {
+        if (!str) return false;
+        return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(str);
+      };
+      
+      for (const poi of allPois) {
+        const existingPoi = uniquePoisMap.get(poi.id);
+        
+        if (!existingPoi) {
+          // First occurrence - add to map
+          uniquePoisMap.set(poi.id, poi);
+        } else {
+          // Duplicate detected - merge data with Vietnamese preference
+          
+          // Handle name: always prefer Vietnamese
+          if (poi.name) {
+            const poiIsVi = isVietnamese(poi.name);
+            const existingIsVi = isVietnamese(existingPoi.name || '');
+            
+            // Overwrite if:
+            // - Current is Vietnamese and existing is not
+            // - OR current has content and existing is placeholder (POI #xxx)
+            if ((poiIsVi && !existingIsVi) || 
+                (!poi.name.match(/POI #/) && (existingPoi.name || '').match(/POI #/))) {
+              existingPoi.name = poi.name;
+            }
+          }
+          
+          // Merge other fields if missing in existing POI
+          for (const key of Object.keys(poi)) {
+            if (key !== 'name' && !existingPoi[key] && poi[key]) {
+              existingPoi[key] = poi[key];
+            }
+          }
+        }
+      }
+
+      // Convert map back to array
+      const uniquePois = Array.from(uniquePoisMap.values());
+
+      // Sort by name
+      const sortedPois = uniquePois.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Apply pagination chỉ khi KHÔNG phải lightweight mode
+      let finalPois = sortedPois;
+      if (shouldPaginate) {
+        const startIndex = (validPage - 1) * validLimit;
+        const endIndex = startIndex + validLimit;
+        finalPois = sortedPois.slice(startIndex, endIndex);
+      }
 
       return {
         success: true,
-        data: paginatedPois,
-        pagination: {
+        data: finalPois,
+        pagination: shouldPaginate ? {
           page: validPage,
           limit: validLimit,
           total: sortedPois.length,
           totalPages: Math.ceil(sortedPois.length / validLimit),
+        } : {
+          page: 1,
+          limit: sortedPois.length,
+          total: sortedPois.length,
+          totalPages: 1,
         },
       };
     } catch (error) {
@@ -526,13 +581,346 @@ export class AdminService {
   }
 
   /**
+   * Lấy chi tiết đầy đủ của một POI theo ID
+   * @param id - URI của POI (VD: urn:ngsi-ld:PointOfInterest:Hanoi:school:123)
+   * @returns Chi tiết đầy đủ của POI
+   */
+  async getPoiById(id: string): Promise<any> {
+    try {
+      this.logger.log(`Fetching POI detail for ID: ${id}`);
+
+      if (!id) {
+        throw new BadRequestException('POI ID is required');
+      }
+
+      // Query tất cả graphs để tìm POI
+      const graphMap = this.getGraphMap();
+      const graphUrls = Object.values(graphMap);
+
+      // Query để lấy tất cả properties của POI từ bất kỳ graph nào
+      for (const graphUrl of graphUrls) {
+        try {
+          const query = `
+            PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
+            
+            SELECT DISTINCT ?p ?o
+            WHERE {
+              GRAPH <${graphUrl}> {
+                <${id}> ?p ?o .
+              }
+            }
+          `.trim();
+
+          const results = await this.fusekiService.executeSelect(query);
+
+          if (results && results.length > 0) {
+            // Tìm thấy POI trong graph này
+            const typeFromGraph = this.extractTypeFromGraph(graphUrl);
+            
+            // Build POI object từ predicates
+            const poi: any = {
+              id,
+              type: typeFromGraph,
+            };
+
+            results.forEach((row) => {
+              const predicate = row.p;
+              const value = row.o;
+
+              if (!value) return;
+
+              // Extract field name
+              const parts = predicate.split(/[/#]/);
+              let fieldName = parts[parts.length - 1];
+
+              // Map các predicates sang fields
+              if (fieldName === 'asWKT' || predicate.includes('asWKT')) {
+                poi.wkt = value;
+                try {
+                  const { lat, lon } = this.parseWKT(value);
+                  poi.lat = lat;
+                  poi.lon = lon;
+                } catch (e) {
+                  this.logger.warn(`Failed to parse WKT: ${value}`);
+                }
+              } else if (fieldName === 'name') {
+                // Handle name với Vietnamese preference
+                const valueStr = String(value).trim();
+                const hasVietnameseChars = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(valueStr);
+                const hasViTag = valueStr.includes('@vi') || valueStr.endsWith('"@vi');
+                
+                let cleanValue = valueStr
+                  .replace(/^["']|["']$/g, '')
+                  .replace(/@(vi|en)$/, '')
+                  .trim();
+                
+                if (hasViTag || hasVietnameseChars) {
+                  poi.name = cleanValue;
+                } else if (!poi.name) {
+                  poi.name = cleanValue;
+                }
+              } else if (fieldName === 'osm_id' || fieldName === 'osmId') {
+                poi.osm_id = value;
+              } else if (fieldName === 'osm_type' || fieldName === 'osmType') {
+                poi.osm_type = value;
+              } else if (fieldName.startsWith('addr_')) {
+                poi[fieldName] = value;
+              } else if (fieldName === 'operator') {
+                poi.operator = value;
+              } else if (fieldName === 'brand') {
+                poi.brand = value;
+              } else if (fieldName === 'telephone') {
+                poi.phone = value;
+              } else if (fieldName === 'url') {
+                poi.website = value;
+              } else if (fieldName === 'sameAs') {
+                poi.wikidata = value;
+              } else if (fieldName !== 'type' && value && String(value).trim()) {
+                // Add other fields
+                fieldName = fieldName.replace(/:/g, '_');
+                poi[fieldName] = value;
+              }
+            });
+
+            // Fallback name
+            if (!poi.name) {
+              poi.name = `POI #${id.split(':').pop()}`;
+            }
+
+            this.logger.log(`Found POI ${id} in graph ${graphUrl}`);
+            return poi;
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to query graph ${graphUrl}: ${err.message}`);
+          // Continue with next graph
+        }
+      }
+
+      // POI not found in any graph
+      throw new BadRequestException(`POI with ID ${id} not found`);
+    } catch (error) {
+      this.logger.error(`Error fetching POI ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Lấy tất cả attributes (dynamic properties) của POI
+   * Support Dynamic RDF Properties - tự động hiển thị bất kỳ predicate nào có trong RDF
+   * @param id - URI của POI
+   * @returns Array of { key, value } objects
+   */
+  async getPoiAttributes(id: string): Promise<{ key: string; value: string }[]> {
+    try {
+      this.logger.log(`Fetching dynamic attributes for POI: ${id}`);
+
+      if (!id) {
+        throw new BadRequestException('POI ID is required');
+      }
+
+      // Query tất cả graphs để tìm POI
+      const graphMap = this.getGraphMap();
+      const graphUrls = Object.values(graphMap);
+
+      // Blacklist - các predicates không nên hiển thị
+      const excludedPredicates = [
+        'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+        'http://www.opengis.net/ont/geosparql#asWKT', // Đã có lat/lon
+        'http://www.w3.org/2000/01/rdf-schema#label',
+        'http://www.w3.org/2000/01/rdf-schema#comment',
+      ];
+
+      for (const graphUrl of graphUrls) {
+        try {
+          const query = `
+            PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
+            
+            SELECT ?p ?o
+            WHERE {
+              GRAPH <${graphUrl}> {
+                <${id}> ?p ?o .
+              }
+            }
+          `.trim();
+
+          const results = await this.fusekiService.executeSelect(query);
+
+          if (results && results.length > 0) {
+            this.logger.log(`Found ${results.length} properties for POI ${id}`);
+
+            // Transform results thành array of key-value
+            const attributes: { key: string; value: string }[] = [];
+
+            results.forEach((row) => {
+              const predicate = row.p;
+              const value = row.o;
+
+              // Skip excluded predicates
+              if (excludedPredicates.includes(predicate)) {
+                return;
+              }
+
+              if (!value || String(value).trim() === '') {
+                return;
+              }
+
+              // Extract readable key from predicate URI
+              const parts = predicate.split(/[/#]/);
+              let key = parts[parts.length - 1];
+
+              // Cleanup key - convert to Title Case
+              key = key.replace(/:/g, '_').replace(/([A-Z])/g, ' $1').trim();
+              key = key.charAt(0).toUpperCase() + key.slice(1);
+
+              // Cleanup value
+              let cleanValue = String(value).trim();
+              
+              // Remove language tags
+              cleanValue = cleanValue.replace(/@(vi|en)$/i, '');
+              
+              // Remove quotes if wrapped
+              cleanValue = cleanValue.replace(/^["']|["']$/g, '');
+
+              // Handle WKT coordinates specially - extract lat/lon
+              if (key.toLowerCase().includes('wkt') || predicate.includes('asWKT')) {
+                try {
+                  const { lat, lon } = this.parseWKT(cleanValue);
+                  attributes.push({ key: 'Latitude', value: lat.toFixed(6) });
+                  attributes.push({ key: 'Longitude', value: lon.toFixed(6) });
+                  return; // Skip original WKT value
+                } catch (e) {
+                  // If parse fails, skip WKT
+                  return;
+                }
+              }
+
+              // Add to attributes
+              attributes.push({ key, value: cleanValue });
+            });
+
+            return attributes;
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to query graph ${graphUrl}: ${err.message}`);
+          continue;
+        }
+      }
+
+      // POI not found
+      throw new BadRequestException(`POI with ID ${id} not found`);
+    } catch (error) {
+      this.logger.error(`Error fetching attributes for POI ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch lightweight POIs - chỉ lấy trường cần thiết cho hiển thị map
+   * @param graphUrl - URL của Named Graph  
+   * @param limit - Số lượng tối đa (dùng limit lớn để lấy tất cả)
+   */
+  private async fetchLightweightPoisFromGraph(graphUrl: string, limit: number = 10000): Promise<any[]> {
+    try {
+      const typeFromGraph = this.extractTypeFromGraph(graphUrl);
+
+      // Query chỉ lấy các trường thiết yếu: id, name, type, coordinates
+      // Lightweight mode thường dùng limit cao để lấy TẤT CẢ POIs cho map
+      const query = `
+        PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
+        PREFIX schema: <http://schema.org/>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+        
+        SELECT DISTINCT ?s ?name ?wkt
+        WHERE {
+          GRAPH <${graphUrl}> {
+            ?s a fiware:PointOfInterest .
+            OPTIONAL { ?s schema:name ?name }
+            OPTIONAL { ?s geo:asWKT ?wkt }
+          }
+        }
+        LIMIT ${limit}
+      `.trim();
+
+      this.logger.debug(`Lightweight query for ${graphUrl}`);
+
+      const results = await this.fusekiService.executeSelect(query);
+
+      // Transform results - chỉ giữ lại các trường cần thiết
+      return results
+        .map((row) => {
+          try {
+            const poi: any = {
+              id: row.s,
+              type: typeFromGraph,
+            };
+
+            // Handle name với Vietnamese preference
+            if (row.name) {
+              const valueStr = String(row.name).trim();
+              const hasVietnameseChars = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(valueStr);
+              const hasViTag = valueStr.includes('@vi') || valueStr.endsWith('"@vi');
+              
+              let cleanValue = valueStr
+                .replace(/^["']|["']$/g, '')
+                .replace(/@(vi|en)$/, '')
+                .trim();
+              
+              if (hasViTag || hasVietnameseChars) {
+                poi.name = cleanValue;
+              } else if (!poi.name) {
+                poi.name = cleanValue;
+              }
+            }
+
+            // Parse WKT for coordinates
+            if (row.wkt) {
+              poi.wkt = row.wkt;
+              try {
+                const { lat, lon } = this.parseWKT(row.wkt);
+                poi.lat = lat;
+                poi.lon = lon;
+              } catch (e) {
+                this.logger.warn(`Failed to parse WKT: ${row.wkt}`);
+              }
+            }
+
+            // Fallback name
+            if (!poi.name) {
+              poi.name = `POI_${typeFromGraph}_${Math.random().toString(36).substr(2, 6)}`;
+            }
+
+            // Bỏ qua POI không có tọa độ
+            if (!poi.lat || !poi.lon) {
+              return null;
+            }
+
+            return poi;
+          } catch (parseError) {
+            this.logger.warn(`Failed to parse lightweight POI: ${parseError.message}`);
+            return null;
+          }
+        })
+        .filter((poi) => poi !== null);
+    } catch (error) {
+      this.logger.error(`Error fetching lightweight POIs from ${graphUrl}:`, error);
+      return [];
+    }
+  }
+
+  /**
    * Fetch POIs từ một Named Graph cụ thể
    * Sử dụng introspection để query động chỉ những thuộc tính có trong data
    * @param graphUrl - URL của Named Graph
-   * @param limit - Số lượng tối đa
+   * @param limit - Số lượng tối đa (default 100 cho full mode, 10000 cho lightweight)
+   * @param isLightweight - Nếu true, chỉ query các trường cần thiết cho map
    */
-  private async fetchPoisFromGraph(graphUrl: string, limit: number = 20): Promise<any[]> {
+  private async fetchPoisFromGraph(graphUrl: string, limit: number = 100, isLightweight: boolean = false): Promise<any[]> {
     try {
+      // Nếu lightweight mode, chỉ query các trường cần thiết
+      if (isLightweight) {
+        return await this.fetchLightweightPoisFromGraph(graphUrl, limit);
+      }
+
       // Lấy schema (danh sách predicates) có trong graph
       const predicates = await this.introspectGraphSchema(graphUrl);
       
@@ -555,10 +943,12 @@ export class AdminService {
       });
 
       // Build query động - sử dụng fiware:PointOfInterest thay vì geo:Point
+      // CHÚ Ý: Không thể dùng FILTER(lang(?px) = "vi") ở đây vì ?px là động
+      // Language preference sẽ được xử lý trong transformGraphResults()
       const query = `
         PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         
-        SELECT ${selectVars.join(' ')}
+        SELECT DISTINCT ?s ${selectVars.slice(1).join(' ')}
         WHERE {
           GRAPH <${graphUrl}> {
             ?s a fiware:PointOfInterest .
@@ -623,11 +1013,40 @@ export class AdminService {
                 this.logger.warn(`Failed to parse WKT: ${value}`);
               }
             } else if (fieldName === 'name') {
-              // Extract Vietnamese name (preferred)
-              if (value.includes('@vi')) {
-                poi.name = value.replace('@vi', '').replace(/"/g, '');
-              } else if (!poi.name) {
-                poi.name = value.replace('@en', '').replace(/"/g, '');
+              // Xử lý name với language tags: ưu tiên @vi > @en > no-tag
+              const valueStr = String(value).trim();
+              
+              // Detect Vietnamese by checking for Vietnamese characters
+              const hasVietnameseChars = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(valueStr);
+              
+              // Check for explicit language tags in string
+              const hasViTag = valueStr.includes('@vi') || valueStr.endsWith('"@vi');
+              const hasEnTag = valueStr.includes('@en') || valueStr.endsWith('"@en');
+              
+              // Clean the value (remove quotes and language tags)
+              let cleanValue = valueStr
+                .replace(/^["']|["']$/g, '')  // Remove surrounding quotes
+                .replace(/@(vi|en)$/, '')       // Remove @vi or @en suffix
+                .trim();
+              
+              // Priority logic:
+              // 1. If has @vi tag OR contains Vietnamese characters → use it
+              // 2. If has @en tag and no existing Vietnamese name → use it
+              // 3. No tag and no existing name → use as fallback
+              
+              if (hasViTag || hasVietnameseChars) {
+                // Vietnamese name - highest priority, always overwrite
+                poi.name = cleanValue;
+              } else if (hasEnTag) {
+                // English name - only use if no Vietnamese name exists
+                if (!poi.name) {
+                  poi.name = cleanValue;
+                }
+              } else {
+                // No language tag - fallback if no name exists
+                if (!poi.name) {
+                  poi.name = cleanValue;
+                }
               }
             } else if (fieldName === 'osm_id') {
               poi.osm_id = value;

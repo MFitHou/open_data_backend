@@ -40,7 +40,7 @@ export class ChatbotService implements OnModuleInit {
             model: "gemini-2.5-flash",
             systemInstruction: `### SYSTEM ROLE
                                 You are a specialized **Location & Travel Intelligence Assistant**. You are friendly, knowledgeable about the physical world, and helpful with general daily conversation.
-
+                                **ALWAY RESPONSE ENGLISH**
                                 ### PERMITTED CAPABILITIES (WHAT YOU CAN DO)
                                 1.  **Geospatial & Travel Expert:**
                                     * Provide detailed data on locations, landmarks, addresses, and routes.
@@ -52,7 +52,7 @@ export class ChatbotService implements OnModuleInit {
                                       - \`amenityFeature\`: Facilities/amenities (e.g., "hospitals with parking")
                                       Use these relationships to provide better recommendations for queries like "find restaurants near charging stations".
                                     * **SENSOR DATA & AIR QUALITY**: Search results include real-time sensor data:
-                                      - \`sensorData.aqi\`: Air Quality Index (0-500). Lower = better. 0-50=Tốt, 51-100=Trung bình, 101-150=Kém, 151-200=Xấu, >200=Nguy hiểm
+                                      - \`sensorData.aqi\`: Air Quality Index (0-500). Lower = better. 0-50=Good, 51-100=Moderate, 101-150=Unhealthy for Sensitive, 151-200=Unhealthy, >200=Hazardous
                                       - \`sensorData.temperature\`: Temperature in Celsius
                                       - \`sensorData.noise_level\`: Noise level in dB
                                       Use minAqi/maxAqi parameters to filter by air quality. Example: maxAqi=50 for "good air quality", maxAqi=100 for "acceptable air quality".
@@ -82,9 +82,9 @@ export class ChatbotService implements OnModuleInit {
                                 
                                 **SENSOR DATA & AIR QUALITY QUERIES:**
                                 When user asks about air quality, use minAqi/maxAqi parameters:
-                                * "không khí tốt", "chất lượng không khí tốt", "good air quality" → maxAqi=50
-                                * "không khí trung bình", "acceptable air quality" → maxAqi=100
-                                * "không khí trong lành", "clean air" → maxAqi=50
+                                * "good air quality", "clean air" → maxAqi=50
+                                * "acceptable air quality", "moderate air quality" → maxAqi=100
+                                * "fresh air", "healthy air" → maxAqi=50
                                 * Always include sensorData info in response when available
                                 
                                 **Use searchNearbyWithTopology when:**
@@ -92,10 +92,10 @@ export class ChatbotService implements OnModuleInit {
                                 * User explicitly mentions relationships between two or more types of places
                                 * You need to find places of type A that have specific spatial relationships with places of types B, C, D...
                                 * **CRITICAL WORKFLOW - FOLLOW THIS ORDER**:
-                                  1. **IF location name is mentioned** (e.g., "ở Hồ Hoàn Kiếm", "gần Chợ Bến Thành", "tại Quận 1"):
+                                  1. **IF location name is mentioned** (e.g., "at Hoan Kiem Lake", "near Ben Thanh Market", "in District 1"):
                                      a. FIRST call fetchGeocodeByName(name="location name") to get coordinates
                                      b. THEN call searchNearbyWithTopology with those coordinates
-                                  2. **IF query contains "gần tôi", "gần đây", "quanh đây", "xung quanh", "nearby", "near me"** without specific location:
+                                  2. **IF query contains "nearby", "near me", "around here", "in this area"** without specific location:
                                      - Use current location from context.currentLocation
                                   3. **IF no location mentioned and no "near me" keywords**:
                                      - DO NOT make search calls, respond that you need a location
@@ -112,10 +112,10 @@ export class ChatbotService implements OnModuleInit {
                                 * Simple query for one or more types (e.g., "find restaurants and cafes", "show me all ATMs")
                                 * No relationship between different types is specified
                                 * **CRITICAL WORKFLOW - FOLLOW THIS ORDER**:
-                                  1. **IF location name is mentioned** (e.g., "tìm ATM ở Hồ Hoàn Kiếm", "nhà hàng tại Quận 1"):
+                                  1. **IF location name is mentioned** (e.g., "find ATM at Hoan Kiem Lake", "restaurants in District 1"):
                                      a. FIRST call fetchGeocodeByName(name="location name") to get coordinates
                                      b. THEN call searchNearby with those coordinates
-                                  2. **IF query contains "gần tôi", "gần đây", "quanh đây", "xung quanh", "nearby", "near me"** without specific location:
+                                  2. **IF query contains "nearby", "near me", "around here", "in this area"** without specific location:
                                      - Use current location from context.currentLocation
                                   3. **IF no location mentioned and no "near me" keywords**:
                                      - DO NOT make search calls, respond that you need a location
@@ -128,30 +128,30 @@ export class ChatbotService implements OnModuleInit {
                                   - includeTopology=true for enriched data
                                 
                                 **Examples:**
-                                * "Tìm quán cafe gần tôi có chất lượng không khí tốt" →
+                                * "Find cafes near me with good air quality" →
                                   searchNearby(lon=context.lon, lat=context.lat, types=['cafe'], maxAqi=50, radiusKm=2)
-                                * "Tìm nhà hàng không khí trong lành gần đây" →
+                                * "Find restaurants with clean air nearby" →
                                   searchNearby(lon=context.lon, lat=context.lat, types=['restaurant'], maxAqi=50)
-                                * "Tìm công viên gần trạm xe buýt ở Hồ Hoàn Kiếm" → 
-                                  1. FIRST: fetchGeocodeByName(name="Hồ Hoàn Kiếm") to get lat/lon
+                                * "Find parks near bus stops at Hoan Kiem Lake" → 
+                                  1. FIRST: fetchGeocodeByName(name="Hoan Kiem Lake") to get lat/lon
                                   2. THEN: searchNearbyWithTopology(lon=105.852, lat=21.028, targetType='park', relatedTypes=['bus_stop'], relationship='isNextTo', radiusKm=1)
-                                * "Tìm công viên gần trạm xe buýt gần tôi" → 
-                                  Use lat/lon from context.currentLocation (because "gần tôi" keyword)
+                                * "Find parks near bus stops near me" → 
+                                  Use lat/lon from context.currentLocation (because "near me" keyword)
                                   searchNearbyWithTopology(lon=context.lon, lat=context.lat, targetType='park', relatedTypes=['bus_stop'], relationship='isNextTo')
-                                * "Tìm công viên gần trạm xe buýt" (no location, no "gần tôi") → 
-                                  Respond: "Tôi cần biết vị trí. Vui lòng cho biết bạn muốn tìm ở đâu, hoặc nói 'gần tôi' để dùng vị trí hiện tại."
-                                * "Tìm quán ăn gần đây" → 
-                                  Use lat/lon from context.currentLocation (because "gần đây" keyword)
+                                * "Find parks near bus stops" (no location, no "near me") → 
+                                  Respond: "I need a location. Please specify where you want to search, or say 'near me' to use your current location."
+                                * "Find restaurants nearby" → 
+                                  Use lat/lon from context.currentLocation (because "nearby" keyword)
                                   searchNearby(lon=context.lon, lat=context.lat, types=['restaurant'])
-                                * "Tìm quán ăn ở Hà Nội" →
-                                  1. FIRST: fetchGeocodeByName(name="Hà Nội")
+                                * "Find restaurants in Hanoi" →
+                                  1. FIRST: fetchGeocodeByName(name="Hanoi")
                                   2. THEN: searchNearby(lon=..., lat=..., types=['restaurant'])
-                                * "Tìm quán ăn gần trạm sạc" (no location) → 
-                                  Respond: "Vui lòng cho biết địa điểm, hoặc nói 'gần tôi'."
-                                * "Tìm quán ăn gần trạm sạc quanh đây" → searchNearbyWithTopology(lon=context.lon, lat=context.lat, targetType='restaurant', relatedTypes=['charging_station'], relationship='isNextTo')
-                                * "Tìm cafe trong công viên" (no location) → Respond: "Vui lòng cho biết nơi bạn muốn tìm."
-                                * "Tìm bệnh viện có bãi đỗ xe" (no location) → Respond: "Vui lòng cho biết khu vực cần tìm."
-                                * "Tìm cây ATM gần đây" → searchNearby(lon=..., lat=..., types=['atm'])
+                                * "Find restaurants near charging stations" (no location) → 
+                                  Respond: "Please specify the location, or say 'near me'."
+                                * "Find restaurants near charging stations around here" → searchNearbyWithTopology(lon=context.lon, lat=context.lat, targetType='restaurant', relatedTypes=['charging_station'], relationship='isNextTo')
+                                * "Find cafes in parks" (no location) → Respond: "Please specify where you want to search."
+                                * "Find hospitals with parking" (no location) → Respond: "Please specify the area to search."
+                                * "Find ATMs nearby" → searchNearby(lon=..., lat=..., types=['atm'])
 
                                 ### REFUSAL STRATEGY
                                 When a user asks for a prohibited topic, kindly decline and **pivot** back to your persona.
@@ -204,7 +204,7 @@ export class ChatbotService implements OnModuleInit {
                 
                 this.logger.log(`Location search response: ${text}`);
                 
-                // Parse JSON với error handling
+                // Parse JSON with error handling
                 let locationData;
                 try {
                     locationData = JSON.parse(text);
@@ -245,7 +245,7 @@ export class ChatbotService implements OnModuleInit {
             }
         } else if(ananlysisPrompt.questionType === 'public_service_search') {
             try {
-                // Parse service types từ analysis
+                // Parse service types from analysis
                 const serviceTypes = ananlysisPrompt.service 
                     ? ananlysisPrompt.service.split(',').map((s: string) => s.trim().toLowerCase())
                     : [];
@@ -253,7 +253,7 @@ export class ChatbotService implements OnModuleInit {
                 const location = ananlysisPrompt.location || '';
                 const scope = ananlysisPrompt.scope || '';
                 
-                // Tính toán radius từ scope
+                // Calculate radius from scope
                 let radiusKm = 5;
                 if (scope) {
                     const scopeLower = scope.toLowerCase();
@@ -265,9 +265,9 @@ export class ChatbotService implements OnModuleInit {
                         const kmMatch = scopeLower.match(/(\d+(?:\.\d+)?)\s*km/);
                         if (kmMatch) {
                             radiusKm = Math.min(Math.max(parseFloat(kmMatch[1]), 0.5), 50);
-                        } else if (scopeLower.includes('gần nhất') || scopeLower.includes('gần đây')) {
+                        } else if (scopeLower.includes('nearest') || scopeLower.includes('nearby') || scopeLower.includes('closest')) {
                             radiusKm = 2;
-                        } else if (scopeLower.includes('xa')) {
+                        } else if (scopeLower.includes('far') || scopeLower.includes('distant')) {
                             radiusKm = 10;
                         }
                     }
@@ -277,19 +277,22 @@ export class ChatbotService implements OnModuleInit {
                 
                 const serviceMapping: { [key: string]: string } = {
                     'atm': 'atms',
-                    'bệnh viện': 'hospitals',
+                    'atms': 'atms',
                     'hospital': 'hospitals',
-                    'trường học': 'schools',
+                    'hospitals': 'hospitals',
                     'school': 'schools',
-                    'nhà vệ sinh': 'toilets',
+                    'schools': 'schools',
                     'toilet': 'toilets',
                     'toilets': 'toilets',
-                    'sân chơi': 'playgrounds',
+                    'restroom': 'toilets',
                     'playground': 'playgrounds',
-                    'trạm xe buýt': 'bus-stops',
+                    'playgrounds': 'playgrounds',
                     'bus_stop': 'bus-stops',
-                    'nước uống': 'drinking_water',
-                    'drinking_water': 'drinking_water'
+                    'bus-stop': 'bus-stops',
+                    'bus stop': 'bus-stops',
+                    'drinking_water': 'drinking_water',
+                    'drinking water': 'drinking_water',
+                    'water fountain': 'drinking_water'
                 };
                 
                 const amenities: string[] = [];
@@ -359,7 +362,7 @@ export class ChatbotService implements OnModuleInit {
                         amenities: amenities,
                         limit: 50
                     },
-                    message: `Tìm kiếm ${amenities.join(', ')} ${location ? `tại ${location}` : 'gần bạn'} trong bán kính ${radiusKm}km`
+                    message: `Searching for ${amenities.join(', ')} ${location ? `at ${location}` : 'near you'} within ${radiusKm}km radius`
                 };
                 
             } catch (error) {
@@ -482,8 +485,8 @@ export class ChatbotService implements OnModuleInit {
             
             // Fallback response
             const lowerContent = contents.toLowerCase();
-            const publicServiceKeywords = ['bệnh viện', 'trường học', 'nhà vệ sinh', 'sân chơi', 'trạm xe buýt', 'nước uống'];
-            const locationInfoKeywords = ['giới thiệu', 'lịch sử', 'thông tin', 'có gì', 'đặc biệt', 'nổi tiếng'];
+            const publicServiceKeywords = ['hospital', 'school', 'toilet', 'playground', 'bus stop', 'drinking water', 'atm', 'bank', 'pharmacy', 'police station'];
+            const locationInfoKeywords = ['introduce', 'history', 'information', 'what is', 'special', 'famous', 'tell me about', 'describe', 'explain'];
             
             let questionType = 'unknown';
             
@@ -491,7 +494,7 @@ export class ChatbotService implements OnModuleInit {
                 questionType = 'location_info';
             } else if (publicServiceKeywords.some(keyword => lowerContent.includes(keyword))) {
                 questionType = 'public_service_search';
-            } else if (lowerContent.includes('tìm') || lowerContent.includes('ở đâu') || lowerContent.includes('gần')) {
+            } else if (lowerContent.includes('find') || lowerContent.includes('where') || lowerContent.includes('near') || lowerContent.includes('search') || lowerContent.includes('locate') || lowerContent.includes('show me')) {
                 questionType = 'location_search';
             } else {
                 questionType = 'normal_question';
@@ -505,49 +508,65 @@ export class ChatbotService implements OnModuleInit {
     }
 
 
-    async ChatFunctionCalling(contents: string) {
+    async ChatFunctionCalling(contents: string, context?: { currentLocation?: { lat: number; lon: number } }) {
         if(!contents || typeof contents !== 'string'){
             throw new BadRequestException('Invalid input: contents must be a non-empty string');
         }
 
         const toolsDefinition = this.chatToolsRegistry.toolsSchema; 
 
+        // Detect if user wants to use current location
+        const nearMeKeywords = [
+            'near me', 'nearby', 'around me', 'close to me', 'my location', 'where i am',
+            'around here', 'in this area', 'close by', 'in my vicinity'
+        ];
+        const lowerContents = contents.toLowerCase();
+        const wantsCurrentLocation = nearMeKeywords.some(keyword => lowerContents.includes(keyword));
+        
+        // Build context string for the AI
+        let contextInfo = '';
+        if (wantsCurrentLocation && context?.currentLocation) {
+            contextInfo = `\n\nCONTEXT: User wants to search near their current location. Current coordinates: lat=${context.currentLocation.lat}, lon=${context.currentLocation.lon}. Use these coordinates directly for searchNearby or searchNearbyWithTopology.`;
+        } else if (wantsCurrentLocation && !context?.currentLocation) {
+            contextInfo = `\n\nCONTEXT: User wants to search near their current location but no coordinates provided. Ask user to enable location services or specify a location name.`;
+        }
+
         try{
             const model = this.genAI.getGenerativeModel({
                 model: "gemini-2.5-flash",
-                systemInstruction: `Bạn là một trợ lý ảo thông minh, thân thiện và linh hoạt.
-                                    QUY TẮC CỐT LÕI VỀ SỬ DỤNG CÔNG CỤ (TOOLS):
-                                    1. **Khi nào dùng Tool tìm kiếm địa điểm:** 
-                                        - Khi người dùng tìm kiếm dịch vụ/địa điểm (ATM, nhà hàng, bệnh viện, v.v.)
-                                        - **QUY TẮC QUAN TRỌNG VỀ TỌA ĐỘ:**
-                                          a. **NẾU có tên địa điểm cụ thể** (ví dụ: "ở Hồ Hoàn Kiếm", "gần Chợ Bến Thành", "tại Hà Nội"):
-                                             → GỌI fetchGeocodeByName(name="tên địa điểm") TRƯỚC để lấy tọa độ
-                                             → SAU ĐÓ gọi searchNearby hoặc searchNearbyWithTopology với tọa độ vừa lấy
-                                          b. **NẾU có từ khóa "gần tôi", "gần đây", "quanh đây", "xung quanh"**:
-                                             → Dùng tọa độ từ context.currentLocation
-                                          c. **NẾU KHÔNG có địa điểm cụ thể VÀ KHÔNG có từ "gần tôi"**:
-                                             → KHÔNG gọi tool, trả lời "Vui lòng cho biết địa điểm hoặc nói 'gần tôi'"
-                                        - Ưu tiên sử dụng searchNearbyWithTopology khi tìm mối quan hệ (ví dụ: "công viên gần trạm xe buýt")
-                                        - Ưu tiên sử dụng hàm tìm kiếm Wikidata để lấy thông tin địa điểm (ví dụ: tọa độ, mô tả, hình ảnh).
-                                    2. **Khi nào dùng Kiến thức nội tại (Internal Knowledge):**
-                                        - Nếu người dùng hỏi về lịch sử, văn hóa, định nghĩa, xin lời khuyên, hoặc trò chuyện xã giao (ví dụ: "Giới thiệu Hà Nội", "Ăn gì ngon ở Sài Gòn?"), HÃY SỬ DỤNG KIẾN THỨC CỦA BẠN để trả lời.
-                                        - KHÔNG được trả lời "Tôi không biết" hoặc "Tôi không có thông tin" chỉ vì không tìm thấy tool phù hợp. Hãy trả lời dựa trên những gì bạn đã được huấn luyện.
-                                    3. **Kết hợp (Hybrid):** Nếu bạn gọi tool và nhận được kết quả (ví dụ: tọa độ), hãy dùng kết quả đó kết hợp với lời văn tự nhiên để trả lời. Đừng chỉ trả về dữ liệu thô.
-                                    4. **XỬ LÝ KẾT QUẢ TOPOLOGY:**
-                                        - Nếu kết quả trả về có "noTopologyFound: true", nghĩa là không tìm thấy mối quan hệ topology nhưng VẪN CÓ KẾT QUẢ tìm kiếm.
-                                        - Hãy thông báo cho người dùng: "Tôi không tìm thấy [loại A] nào gần [loại B], nhưng đây là danh sách [loại A] trong khu vực:"
-                                        - Vẫn hiển thị danh sách kết quả trong items cho người dùng.
+                systemInstruction: `You are an intelligent, friendly, and flexible virtual assistant. **ALWAY RESPONSE ENGLISH**
+                                    CORE RULES FOR USING TOOLS:
+                                    1. **When to use location search Tool:** 
+                                        - When user searches for services/places (ATM, restaurants, hospitals, etc.)
+                                        - **IMPORTANT COORDINATE RULES:**
+                                          a. **IF specific location name is mentioned** (e.g., "at Hoan Kiem Lake", "near Ben Thanh Market", "in Hanoi"):
+                                             → CALL fetchGeocodeByName(name="location name") FIRST to get coordinates
+                                             → THEN call searchNearby or searchNearbyWithTopology with those coordinates
+                                          b. **IF keywords "near me", "nearby", "around here" are present**:
+                                             → Use coordinates from context.currentLocation
+                                          c. **IF NO specific location AND NO "near me" keyword**:
+                                             → DO NOT call tool, respond "Please specify a location or say 'near me'"
+                                        - Prioritize searchNearbyWithTopology when searching for relationships (e.g., "parks near bus stops")
+                                        - Prioritize using Wikidata search function to get location information (e.g., coordinates, description, images).
+                                    2. **When to use Internal Knowledge:**
+                                        - If user asks about history, culture, definitions, advice, or social conversation (e.g., "Tell me about Hanoi", "What's good to eat in Saigon?"), USE YOUR KNOWLEDGE to answer.
+                                        - DO NOT respond "I don't know" or "I have no information" just because no suitable tool was found. Answer based on what you've been trained on.
+                                    3. **Hybrid:** If you call a tool and receive results (e.g., coordinates), use those results combined with natural language to respond. Don't just return raw data.
+                                    4. **HANDLING TOPOLOGY RESULTS:**
+                                        - If results contain "noTopologyFound: true", it means no topology relationship was found but search results STILL EXIST.
+                                        - Inform the user: "I couldn't find [type A] near [type B], but here's a list of [type A] in the area:"
+                                        - Still display the results list in items to the user.
                                     
-                                    VÍ DỤ:
-                                    - "Tìm công viên gần trạm xe buýt ở Hồ Hoàn Kiếm" → fetchGeocodeByName("Hồ Hoàn Kiếm") → searchNearbyWithTopology
-                                    - "Tìm nhà hàng gần đây" → searchNearby với context.currentLocation (có "gần đây")
-                                    - "Tìm ATM ở Hà Nội" → fetchGeocodeByName("Hà Nội") → searchNearby
-                                    - "Tìm cafe" (không có địa điểm) → Trả lời: "Bạn muốn tìm ở đâu? Hoặc nói 'gần tôi' để tìm quanh vị trí hiện tại."
+                                    EXAMPLES:
+                                    - "Find parks near bus stops at Hoan Kiem Lake" → fetchGeocodeByName("Hoan Kiem Lake") → searchNearbyWithTopology
+                                    - "Find restaurants nearby" → searchNearby with context.currentLocation (has "nearby")
+                                    - "Find ATMs in Hanoi" → fetchGeocodeByName("Hanoi") → searchNearby
+                                    - "Find cafes" (no location) → Respond: "Where would you like to search? Or say 'near me' to use your current location."
                                     
-                                    PHONG CÁCH TRẢ LỜI:
-                                    - Trả lời theo ngôn ngữ của câu hỏi (Tiếng Việt cho câu hỏi tiếng Việt, English cho câu hỏi tiếng Anh).
-                                    - Giọng văn tự nhiên, hữu ích, như một hướng dẫn viên du lịch thực thụ.
-                                    - Nếu tool trả về lỗi hoặc không tìm thấy, hãy xin lỗi và cố gắng đưa ra thông tin gợi ý liên quan từ kiến thức của bạn.`,
+                                    RESPONSE STYLE:
+                                    - Respond in the language of the question (Vietnamese for Vietnamese questions, English for English questions).
+                                    - Natural, helpful tone, like a real travel guide.
+                                    - If tool returns error or no results, apologize and try to provide relevant suggestions from your knowledge.`,
                 generationConfig: {
                     temperature: 0.3,
                 },
@@ -557,7 +576,9 @@ export class ChatbotService implements OnModuleInit {
             });
 
             const chat = model.startChat();
-            let result = await chat.sendMessage(contents);
+            // Include context info in the message if available
+            const messageWithContext = contents + contextInfo;
+            let result = await chat.sendMessage(messageWithContext);
             let response = result.response;
             let functionCalls = response.functionCalls();
             let functionResult : any[] = [];

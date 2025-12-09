@@ -38,10 +38,10 @@ export class AdminFusekiService implements OnModuleInit {
     try {
       this.logger.log('Admin Fuseki query endpoint: ' + this.queryEndpoint);
       if (!this.queryEndpoint) {
-        this.logger.error('Thiếu FUSEKI_QUERY_ENDPOINT');
+        this.logger.error('Missing FUSEKI_QUERY_ENDPOINT');
         return;
       }
-      // Kiểm tra graph list (chỉ log, không chặn)
+      // Check graph list (log only, don't block)
       await this.listGraphs();
     } catch (e: any) {
       this.logger.warn('Init admin fuseki skip: ' + e.message);
