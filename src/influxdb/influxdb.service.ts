@@ -15,7 +15,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Injectable, Logger, OnModuleInit, BadRequestException, HttpException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  BadRequestException,
+  HttpException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InfluxDB, QueryApi } from '@influxdata/influxdb-client';
 import { firstValueFrom } from 'rxjs/internal/firstValueFrom';
@@ -66,9 +72,11 @@ export class InfluxDBService implements OnModuleInit {
   private readonly org: string;
 
   constructor(private configService: ConfigService) {
-    const url = this.configService.get<string>('INFLUXDB_URL') || 'http://localhost:8086';
+    const url =
+      this.configService.get<string>('INFLUXDB_URL') || 'http://localhost:8086';
     const token = this.configService.get<string>('INFLUXDB_TOKEN') || '';
-    this.bucket = this.configService.get<string>('INFLUXDB_BUCKET') || 'iot_data';
+    this.bucket =
+      this.configService.get<string>('INFLUXDB_BUCKET') || 'iot_data';
     this.org = this.configService.get<string>('INFLUXDB_ORG') || 'fithou';
 
     this.influxDB = new InfluxDB({ url, token });
@@ -77,7 +85,9 @@ export class InfluxDBService implements OnModuleInit {
 
   async onModuleInit() {
     this.logger.log('InfluxDB Service initialized');
-    this.logger.log(`InfluxDB URL: ${this.configService.get<string>('INFLUXDB_URL') || 'http://localhost:8086'}`);
+    this.logger.log(
+      `InfluxDB URL: ${this.configService.get<string>('INFLUXDB_URL') || 'http://localhost:8086'}`,
+    );
     this.logger.log(`InfluxDB Bucket: ${this.bucket}`);
     this.logger.log(`InfluxDB Org: ${this.org}`);
   }
@@ -95,16 +105,17 @@ export class InfluxDBService implements OnModuleInit {
   private validateMeasurement(measurement: string, fields?: string[]): void {
     if (!MEASUREMENTS[measurement as MeasurementType]) {
       throw new BadRequestException(
-        `Invalid measurement: ${measurement}. Available: ${Object.keys(MEASUREMENTS).join(', ')}`
+        `Invalid measurement: ${measurement}. Available: ${Object.keys(MEASUREMENTS).join(', ')}`,
       );
     }
 
     if (fields && fields.length > 0) {
-      const validFields = MEASUREMENTS[measurement as MeasurementType].fields as readonly string[];
-      const invalidFields = fields.filter(f => !validFields.includes(f));
+      const validFields = MEASUREMENTS[measurement as MeasurementType]
+        .fields as readonly string[];
+      const invalidFields = fields.filter((f) => !validFields.includes(f));
       if (invalidFields.length > 0) {
         throw new BadRequestException(
-          `Invalid fields for ${measurement}: ${invalidFields.join(', ')}. Available: ${validFields.join(', ')}`
+          `Invalid fields for ${measurement}: ${invalidFields.join(', ')}. Available: ${validFields.join(', ')}`,
         );
       }
     }
@@ -121,11 +132,12 @@ export class InfluxDBService implements OnModuleInit {
     const { stationId, measurement, fields } = params;
     this.validateMeasurement(measurement, fields);
 
-    const selectedFields = fields && fields.length > 0 
-      ? fields 
-      : MEASUREMENTS[measurement].fields;
+    const selectedFields =
+      fields && fields.length > 0 ? fields : MEASUREMENTS[measurement].fields;
 
-    const fieldFilter = selectedFields.map(f => `r["_field"] == "${f}"`).join(' or ');
+    const fieldFilter = selectedFields
+      .map((f) => `r["_field"] == "${f}"`)
+      .join(' or ');
 
     const query = `
       from(bucket: "${this.bucket}")
@@ -136,10 +148,9 @@ export class InfluxDBService implements OnModuleInit {
         |> last()
     `;
 
-
     try {
       const results: any[] = [];
-      
+
       await new Promise<void>((resolve, reject) => {
         this.queryApi.queryRows(query, {
           next: (row, tableMeta) => {
@@ -191,18 +202,26 @@ export class InfluxDBService implements OnModuleInit {
     stationId: string;
     measurement: MeasurementType;
     fields?: string[];
-    start: string;  // e.g., "-1h", "-24h", "-7d", or ISO timestamp
-    stop?: string;  // e.g., "now()", or ISO timestamp
+    start: string; // e.g., "-1h", "-24h", "-7d", or ISO timestamp
+    stop?: string; // e.g., "now()", or ISO timestamp
     aggregateWindow?: string; // e.g., "1m", "5m", "1h"
   }): Promise<SensorDataPoint[]> {
-    const { stationId, measurement, fields, start, stop = 'now()', aggregateWindow } = params;
+    const {
+      stationId,
+      measurement,
+      fields,
+      start,
+      stop = 'now()',
+      aggregateWindow,
+    } = params;
     this.validateMeasurement(measurement, fields);
 
-    const selectedFields = fields && fields.length > 0 
-      ? fields 
-      : MEASUREMENTS[measurement].fields;
+    const selectedFields =
+      fields && fields.length > 0 ? fields : MEASUREMENTS[measurement].fields;
 
-    const fieldFilter = selectedFields.map(f => `r["_field"] == "${f}"`).join(' or ');
+    const fieldFilter = selectedFields
+      .map((f) => `r["_field"] == "${f}"`)
+      .join(' or ');
 
     let query = `
       from(bucket: "${this.bucket}")
@@ -262,11 +281,12 @@ export class InfluxDBService implements OnModuleInit {
     const { measurement, fields } = params;
     this.validateMeasurement(measurement, fields);
 
-    const selectedFields = fields && fields.length > 0 
-      ? fields 
-      : MEASUREMENTS[measurement].fields;
+    const selectedFields =
+      fields && fields.length > 0 ? fields : MEASUREMENTS[measurement].fields;
 
-    const fieldFilter = selectedFields.map(f => `r["_field"] == "${f}"`).join(' or ');
+    const fieldFilter = selectedFields
+      .map((f) => `r["_field"] == "${f}"`)
+      .join(' or ');
 
     const query = `
       from(bucket: "${this.bucket}")
@@ -294,7 +314,10 @@ export class InfluxDBService implements OnModuleInit {
       });
 
       // Group by station_id
-      const stationMap = new Map<string, { data: Record<string, number | null>; timestamp: string }>();
+      const stationMap = new Map<
+        string,
+        { data: Record<string, number | null>; timestamp: string }
+      >();
 
       for (const row of results) {
         const stationId = row.station_id;
@@ -313,12 +336,14 @@ export class InfluxDBService implements OnModuleInit {
         }
       }
 
-      return Array.from(stationMap.entries()).map(([stationId, { data, timestamp }]) => ({
-        stationId,
-        measurement,
-        data,
-        timestamp,
-      }));
+      return Array.from(stationMap.entries()).map(
+        ([stationId, { data, timestamp }]) => ({
+          stationId,
+          measurement,
+          data,
+          timestamp,
+        }),
+      );
     } catch (error: any) {
       this.logger.error(`Failed to get all stations data: ${error.message}`);
       throw error;
@@ -334,12 +359,14 @@ export class InfluxDBService implements OnModuleInit {
     fields?: string[];
   }): Promise<StationData[]> {
     const { deviceUri, measurement, fields } = params;
-    
+
     // Extract station ID from device URI
     // Format: urn:ngsi-ld:Device:Hanoi:station:HoGuom -> HoGuom
     const stationId = deviceUri.split(':').pop() || deviceUri;
-    
-    this.logger.debug(`Extracting station ID from URI: ${deviceUri} -> ${stationId}`);
+
+    this.logger.debug(
+      `Extracting station ID from URI: ${deviceUri} -> ${stationId}`,
+    );
 
     if (measurement) {
       const result = await this.getLatestByStation({
@@ -352,7 +379,7 @@ export class InfluxDBService implements OnModuleInit {
 
     // If no measurement specified, get data from all measurements
     const allResults: StationData[] = [];
-    
+
     for (const m of Object.keys(MEASUREMENTS) as MeasurementType[]) {
       try {
         const result = await this.getLatestByStation({
@@ -360,7 +387,7 @@ export class InfluxDBService implements OnModuleInit {
           measurement: m,
           fields: undefined, // Get all fields
         });
-        if (result && Object.values(result.data).some(v => v !== null)) {
+        if (result && Object.values(result.data).some((v) => v !== null)) {
           allResults.push(result);
         }
       } catch (e) {
@@ -403,18 +430,21 @@ export class InfluxDBService implements OnModuleInit {
 
   async get5DayForecast(lat: number, lon: number, units: string = 'metric') {
     try {
-      const baseUrl = this.configService.get<string>('OPENWEATHERMAP_API_BASE_URL');
-      const apiKey = this.configService.get<string>('OPENWEATHERMAP_API_KEY') || '';
-      
+      const baseUrl = this.configService.get<string>(
+        'OPENWEATHERMAP_API_BASE_URL',
+      );
+      const apiKey =
+        this.configService.get<string>('OPENWEATHERMAP_API_KEY') || '';
+
       const params = new URLSearchParams({
-        lat: 21.024500.toString(),
-        lon: 105.841170.toString(),
+        lat: (21.0245).toString(),
+        lon: (105.84117).toString(),
         units,
         appid: apiKey,
       });
-      
+
       const url = `${baseUrl}/forecast?${params.toString()}`;
-      
+
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -471,17 +501,17 @@ export class InfluxDBService implements OnModuleInit {
           icon_url: `https://openweathermap.org/img/wn/${item.weather[0].icon}@2x.png`,
         },
         wind: {
-          speed: item.wind.speed, 
+          speed: item.wind.speed,
           deg: item.wind.deg,
           gust: item.wind.gust,
         },
         clouds: item.clouds.all,
-        humidity: item.main.humidity, 
-        pressure: item.main.pressure, 
-        visibility: item.visibility, 
-        rain: item.rain?.['3h'] || 0, 
-        snow: item.snow?.['3h'] || 0, 
-        pop: item.pop, 
+        humidity: item.main.humidity,
+        pressure: item.main.pressure,
+        visibility: item.visibility,
+        rain: item.rain?.['3h'] || 0,
+        snow: item.snow?.['3h'] || 0,
+        pop: item.pop,
       })),
       total_forecasts: data.cnt,
     };

@@ -85,52 +85,97 @@ export class AdminService {
       // ATM & Banking
       atm: process.env.FUSEKI_GRAPH_ATM || 'http://localhost:3030/graph/atm',
       bank: process.env.FUSEKI_GRAPH_BANK || 'http://localhost:3030/graph/bank',
-      
+
       // Transport
-      bus_stop: process.env.FUSEKI_GRAPH_BUS_STOP || 'http://localhost:3030/graph/bus_stop',
-      
+      bus_stop:
+        process.env.FUSEKI_GRAPH_BUS_STOP ||
+        'http://localhost:3030/graph/bus_stop',
+
       // Food & Drink
       cafe: process.env.FUSEKI_GRAPH_CAFE || 'http://localhost:3030/graph/cafe',
-      restaurant: process.env.FUSEKI_GRAPH_RESTAURANT || 'http://localhost:3030/graph/restaurant',
-      
+      restaurant:
+        process.env.FUSEKI_GRAPH_RESTAURANT ||
+        'http://localhost:3030/graph/restaurant',
+
       // Retail
-      convenience_store: process.env.FUSEKI_GRAPH_CONVENIENCE_STORE || 'http://localhost:3030/graph/convenience_store',
-      supermarket: process.env.FUSEKI_GRAPH_SUPERMARKET || 'http://localhost:3030/graph/supermarket',
-      marketplace: process.env.FUSEKI_GRAPH_MARKETPLACE || 'http://localhost:3030/graph/marketplace',
-      warehouse: process.env.FUSEKI_GRAPH_WAREHOUSE || 'http://localhost:3030/graph/warehouse',
-      
+      convenience_store:
+        process.env.FUSEKI_GRAPH_CONVENIENCE_STORE ||
+        'http://localhost:3030/graph/convenience_store',
+      supermarket:
+        process.env.FUSEKI_GRAPH_SUPERMARKET ||
+        'http://localhost:3030/graph/supermarket',
+      marketplace:
+        process.env.FUSEKI_GRAPH_MARKETPLACE ||
+        'http://localhost:3030/graph/marketplace',
+      warehouse:
+        process.env.FUSEKI_GRAPH_WAREHOUSE ||
+        'http://localhost:3030/graph/warehouse',
+
       // Healthcare
-      hospital: process.env.FUSEKI_GRAPH_HOSPITAL || 'http://localhost:3030/graph/hospital',
-      clinic: process.env.FUSEKI_GRAPH_CLINIC || 'http://localhost:3030/graph/clinic',
-      pharmacy: process.env.FUSEKI_GRAPH_PHARMACY || 'http://localhost:3030/graph/pharmacy',
-      
+      hospital:
+        process.env.FUSEKI_GRAPH_HOSPITAL ||
+        'http://localhost:3030/graph/hospital',
+      clinic:
+        process.env.FUSEKI_GRAPH_CLINIC || 'http://localhost:3030/graph/clinic',
+      pharmacy:
+        process.env.FUSEKI_GRAPH_PHARMACY ||
+        'http://localhost:3030/graph/pharmacy',
+
       // Education
-      school: process.env.FUSEKI_GRAPH_SCHOOL || 'http://localhost:3030/graph/school',
-      university: process.env.FUSEKI_GRAPH_UNIVERSITY || 'http://localhost:3030/graph/university',
-      kindergarten: process.env.FUSEKI_GRAPH_KINDERGARTEN || 'http://localhost:3030/graph/kindergarten',
-      
+      school:
+        process.env.FUSEKI_GRAPH_SCHOOL || 'http://localhost:3030/graph/school',
+      university:
+        process.env.FUSEKI_GRAPH_UNIVERSITY ||
+        'http://localhost:3030/graph/university',
+      kindergarten:
+        process.env.FUSEKI_GRAPH_KINDERGARTEN ||
+        'http://localhost:3030/graph/kindergarten',
+
       // Recreation
-      playground: process.env.FUSEKI_GRAPH_PLAY_GROUNDS || 'http://localhost:3030/graph/playground',
+      playground:
+        process.env.FUSEKI_GRAPH_PLAY_GROUNDS ||
+        'http://localhost:3030/graph/playground',
       park: process.env.FUSEKI_GRAPH_PARK || 'http://localhost:3030/graph/park',
-      
+
       // Infrastructure
-      charging_station: process.env.FUSEKI_GRAPH_CHARGING_STATION || 'http://localhost:3030/graph/charging_station',
-      fuel_station: process.env.FUSEKI_GRAPH_FUEL_STATION || 'http://localhost:3030/graph/fuel_station',
-      parking: process.env.FUSEKI_GRAPH_PARKING || 'http://localhost:3030/graph/parking',
-      
+      charging_station:
+        process.env.FUSEKI_GRAPH_CHARGING_STATION ||
+        'http://localhost:3030/graph/charging_station',
+      fuel_station:
+        process.env.FUSEKI_GRAPH_FUEL_STATION ||
+        'http://localhost:3030/graph/fuel_station',
+      parking:
+        process.env.FUSEKI_GRAPH_PARKING ||
+        'http://localhost:3030/graph/parking',
+
       // Public Services
-      post_office: process.env.FUSEKI_GRAPH_POST_OFFICE || 'http://localhost:3030/graph/post_office',
-      library: process.env.FUSEKI_GRAPH_LIBRARY || 'http://localhost:3030/graph/library',
-      community_centre: process.env.FUSEKI_GRAPH_COMMUNITY_CENTER || 'http://localhost:3030/graph/community_centre',
-      
+      post_office:
+        process.env.FUSEKI_GRAPH_POST_OFFICE ||
+        'http://localhost:3030/graph/post_office',
+      library:
+        process.env.FUSEKI_GRAPH_LIBRARY ||
+        'http://localhost:3030/graph/library',
+      community_centre:
+        process.env.FUSEKI_GRAPH_COMMUNITY_CENTER ||
+        'http://localhost:3030/graph/community_centre',
+
       // Emergency Services
-      police: process.env.FUSEKI_GRAPH_POLICE || 'http://localhost:3030/graph/police',
-      fire_station: process.env.FUSEKI_GRAPH_FIRE_STATION || 'http://localhost:3030/graph/fire_station',
-      
+      police:
+        process.env.FUSEKI_GRAPH_POLICE || 'http://localhost:3030/graph/police',
+      fire_station:
+        process.env.FUSEKI_GRAPH_FIRE_STATION ||
+        'http://localhost:3030/graph/fire_station',
+
       // Utilities
-      drinking_water: process.env.FUSEKI_GRAPH_DRINKING_WATER || 'http://localhost:3030/graph/drinking_water',
-      public_toilet: process.env.FUSEKI_GRAPH_TOILETS || 'http://localhost:3030/graph/public_toilet',
-      waste_basket: process.env.FUSEKI_GRAPH_WASTE_BASKET || 'http://localhost:3030/graph/waste_basket',
+      drinking_water:
+        process.env.FUSEKI_GRAPH_DRINKING_WATER ||
+        'http://localhost:3030/graph/drinking_water',
+      public_toilet:
+        process.env.FUSEKI_GRAPH_TOILETS ||
+        'http://localhost:3030/graph/public_toilet',
+      waste_basket:
+        process.env.FUSEKI_GRAPH_WASTE_BASKET ||
+        'http://localhost:3030/graph/waste_basket',
     };
   }
 
@@ -145,7 +190,7 @@ export class AdminService {
 
       if (!graphUrl) {
         throw new BadRequestException(
-          `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}`
+          `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}`,
         );
       }
 
@@ -167,7 +212,11 @@ export class AdminService {
       const essentialFields = ['name', 'coordinates', 'address'];
       essentialFields.forEach((key) => {
         if (!fields.find((f) => f.key === key || f.key.includes(key))) {
-          fields.unshift({ key, predicate: '', label: this.generateFieldLabel(key) });
+          fields.unshift({
+            key,
+            predicate: '',
+            label: this.generateFieldLabel(key),
+          });
         }
       });
 
@@ -221,17 +270,22 @@ export class AdminService {
       `;
 
       // Tạo promises để đếm từng loại POI
-      const countPromises = Object.entries(graphMap).map(async ([type, graphUrl]) => {
-        try {
-          const query = createCountQuery(graphUrl);
-          const results = await this.fusekiService.executeSelect(query);
-          const count = results.length > 0 ? parseInt(results[0].count || '0', 10) : 0;
-          return { type, count };
-        } catch (error) {
-          this.logger.warn(`Failed to count ${type} from ${graphUrl}: ${error.message}`);
-          return { type, count: 0 };
-        }
-      });
+      const countPromises = Object.entries(graphMap).map(
+        async ([type, graphUrl]) => {
+          try {
+            const query = createCountQuery(graphUrl);
+            const results = await this.fusekiService.executeSelect(query);
+            const count =
+              results.length > 0 ? parseInt(results[0].count || '0', 10) : 0;
+            return { type, count };
+          } catch (error) {
+            this.logger.warn(
+              `Failed to count ${type} from ${graphUrl}: ${error.message}`,
+            );
+            return { type, count: 0 };
+          }
+        },
+      );
 
       // Thực thi tất cả queries song song
       const results = await Promise.all(countPromises);
@@ -253,7 +307,9 @@ export class AdminService {
           .map(([type, count]) => ({ type, count })),
       };
 
-      this.logger.log(`Dashboard stats: ${totalPois} total POIs across ${Object.keys(graphMap).length} categories`);
+      this.logger.log(
+        `Dashboard stats: ${totalPois} total POIs across ${Object.keys(graphMap).length} categories`,
+      );
       return stats;
     } catch (error) {
       this.logger.error('Error fetching dashboard stats:', error);
@@ -284,9 +340,11 @@ export class AdminService {
 
       // Generate OSM-like ID (số nguyên lớn)
       const osmId = Math.floor(Math.random() * 9000000000) + 1000000000;
-      
+
       // Tạo URI theo format: urn:ngsi-ld:PointOfInterest:Hanoi:{type}:{osmId}
-      const typeNormalized = data.type.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const typeNormalized = data.type
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_');
       const poiUri = `urn:ngsi-ld:PointOfInterest:Hanoi:${typeNormalized}:${osmId}`;
 
       // Lấy graph URI từ graph map
@@ -295,34 +353,37 @@ export class AdminService {
 
       // Mapping type sang schema.org class
       const typeSchemaMap: Record<string, string> = {
-        'atm': 'schema:FinancialService',
-        'bank': 'schema:BankOrCreditUnion',
-        'hospital': 'schema:Hospital',
-        'clinic': 'schema:MedicalClinic',
-        'public_toilet': 'schema:PublicToilet',
-        'bus_stop': 'schema:BusStop',
-        'school': 'schema:School',
-        'university': 'schema:CollegeOrUniversity',
-        'library': 'schema:Library',
-        'post_office': 'schema:PostOffice',
-        'police': 'schema:PoliceStation',
-        'fire_station': 'schema:FireStation',
-        'park': 'schema:Park',
-        'playground': 'schema:Playground',
-        'parking': 'schema:ParkingFacility',
-        'restaurant': 'schema:Restaurant',
-        'cafe': 'schema:CafeOrCoffeeShop',
-        'supermarket': 'schema:GroceryStore',
-        'pharmacy': 'schema:Pharmacy',
-        'fuel_station': 'schema:GasStation',
-        'charging_station': 'schema:ChargingStation',
+        atm: 'schema:FinancialService',
+        bank: 'schema:BankOrCreditUnion',
+        hospital: 'schema:Hospital',
+        clinic: 'schema:MedicalClinic',
+        public_toilet: 'schema:PublicToilet',
+        bus_stop: 'schema:BusStop',
+        school: 'schema:School',
+        university: 'schema:CollegeOrUniversity',
+        library: 'schema:Library',
+        post_office: 'schema:PostOffice',
+        police: 'schema:PoliceStation',
+        fire_station: 'schema:FireStation',
+        park: 'schema:Park',
+        playground: 'schema:Playground',
+        parking: 'schema:ParkingFacility',
+        restaurant: 'schema:Restaurant',
+        cafe: 'schema:CafeOrCoffeeShop',
+        supermarket: 'schema:GroceryStore',
+        pharmacy: 'schema:Pharmacy',
+        fuel_station: 'schema:GasStation',
+        charging_station: 'schema:ChargingStation',
       };
 
-      const schemaType = typeSchemaMap[data.type.toLowerCase()] || 'schema:Place';
+      const schemaType =
+        typeSchemaMap[data.type.toLowerCase()] || 'schema:Place';
 
       // Escape chuỗi để tránh SPARQL injection
       const escapedName = this.escapeSparqlString(data.name);
-      const escapedAddress = data.address ? this.escapeSparqlString(data.address) : null;
+      const escapedAddress = data.address
+        ? this.escapeSparqlString(data.address)
+        : null;
 
       // Tạo WKT string: POINT(lon lat)
       const wktString = `POINT(${data.lon} ${data.lat})`;
@@ -340,8 +401,12 @@ export class AdminService {
             <${poiUri}> a ${schemaType} , fiware:PointOfInterest ;
               ext:osm_id ${osmId} ;
               ext:osm_type "node" ;
-              schema:name "${escapedName}"@en ${escapedAddress ? `;
-              schema:address "${escapedAddress}"` : ''} ;
+              schema:name "${escapedName}"@en ${
+                escapedAddress
+                  ? `;
+              schema:address "${escapedAddress}"`
+                  : ''
+              } ;
               geo:asWKT "${wktString}"^^geo:wktLiteral .
           }
         }
@@ -391,11 +456,13 @@ export class AdminService {
             }
           }
         `;
-        
+
         try {
           await this.fusekiService.update(deleteQuery);
         } catch (error) {
-          this.logger.warn(`Failed to delete from ${graphUrl}: ${error.message}`);
+          this.logger.warn(
+            `Failed to delete from ${graphUrl}: ${error.message}`,
+          );
         }
       });
 
@@ -443,7 +510,9 @@ export class AdminService {
    * DEPRECATED - IoT simulation không còn được sử dụng
    */
   async getTrafficData() {
-    this.logger.warn('getTrafficData() is deprecated - IoT simulation has been disabled');
+    this.logger.warn(
+      'getTrafficData() is deprecated - IoT simulation has been disabled',
+    );
     return [];
   }
 
@@ -452,7 +521,9 @@ export class AdminService {
    * DEPRECATED - IoT simulation không còn được sử dụng
    */
   async getFloodData() {
-    this.logger.warn('getFloodData() is deprecated - IoT simulation has been disabled');
+    this.logger.warn(
+      'getFloodData() is deprecated - IoT simulation has been disabled',
+    );
     return [];
   }
 
@@ -464,7 +535,9 @@ export class AdminService {
    */
   async getPois(type?: string, page: number = 1, limit: number = 10) {
     try {
-      this.logger.log(`Fetching POIs: type=${type}, page=${page}, limit=${limit}`);
+      this.logger.log(
+        `Fetching POIs: type=${type}, page=${page}, limit=${limit}`,
+      );
 
       // Validate pagination params
       const validPage = Math.max(1, page);
@@ -475,7 +548,7 @@ export class AdminService {
 
       // Determine which graphs to query
       let graphUrls: string[] = [];
-      
+
       if (!type || type === 'all') {
         // Query all graphs
         graphUrls = Object.values(graphMap);
@@ -484,7 +557,7 @@ export class AdminService {
         const graphUrl = graphMap[type.toLowerCase()];
         if (!graphUrl) {
           throw new BadRequestException(
-            `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}, all`
+            `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}, all`,
           );
         }
         graphUrls = [graphUrl];
@@ -498,7 +571,9 @@ export class AdminService {
           const pois = await this.fetchPoisFromGraph(graphUrl, validLimit * 2);
           allPois.push(...pois);
         } catch (err) {
-          this.logger.warn(`Failed to fetch from graph ${graphUrl}: ${err.message}`);
+          this.logger.warn(
+            `Failed to fetch from graph ${graphUrl}: ${err.message}`,
+          );
           // Continue with other graphs
         }
       }
@@ -531,11 +606,14 @@ export class AdminService {
    * @param graphUrl - URL của Named Graph
    * @param limit - Số lượng tối đa
    */
-  private async fetchPoisFromGraph(graphUrl: string, limit: number = 20): Promise<any[]> {
+  private async fetchPoisFromGraph(
+    graphUrl: string,
+    limit: number = 20,
+  ): Promise<any[]> {
     try {
       // Lấy schema (danh sách predicates) có trong graph
       const predicates = await this.introspectGraphSchema(graphUrl);
-      
+
       if (predicates.length === 0) {
         this.logger.warn(`No predicates found in graph ${graphUrl}`);
         return [];
@@ -573,7 +651,12 @@ export class AdminService {
       const results = await this.fusekiService.executeSelect(query);
 
       // Transform results thành POI objects
-      return this.transformGraphResults(results, predicates, predicateMap, graphUrl);
+      return this.transformGraphResults(
+        results,
+        predicates,
+        predicateMap,
+        graphUrl,
+      );
     } catch (error) {
       this.logger.error(`Error fetching from graph ${graphUrl}:`, error);
       return [];
@@ -589,12 +672,11 @@ export class AdminService {
     predicateMap: Record<string, string>,
     graphUrl: string,
   ): any[] {
-
     return results
       .map((row) => {
         try {
           const typeFromGraph = this.extractTypeFromGraph(graphUrl);
-          
+
           // Build POI object động từ predicates
           const poi: any = {
             id: row.s,
@@ -605,13 +687,13 @@ export class AdminService {
           predicates.forEach((predicate) => {
             const varName = predicateMap[predicate];
             const value = row[varName];
-            
+
             if (!value) return; // Skip null values
 
             // Extract field name từ predicate URI
             const parts = predicate.split(/[/#]/);
             let fieldName = parts[parts.length - 1];
-            
+
             // Special handling cho các field quan trọng
             if (fieldName === 'asWKT' || predicate.includes('asWKT')) {
               poi.wkt = value;
@@ -659,7 +741,9 @@ export class AdminService {
 
           // Fallback cho name
           if (!poi.name) {
-            poi.name = poi.osm_id ? `POI #${poi.osm_id}` : `${typeFromGraph}_${Math.random().toString(36).substr(2, 9)}`;
+            poi.name = poi.osm_id
+              ? `POI #${poi.osm_id}`
+              : `${typeFromGraph}_${Math.random().toString(36).substr(2, 9)}`;
           }
 
           // Ensure coordinates exist
@@ -688,7 +772,7 @@ export class AdminService {
 
     // Regex để extract coordinates từ POINT(lon lat)
     const match = wkt.match(/POINT\s*\(\s*([\d.-]+)\s+([\d.-]+)\s*\)/i);
-    
+
     if (!match) {
       throw new Error(`Invalid WKT format: ${wkt}`);
     }

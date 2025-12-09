@@ -30,7 +30,8 @@ export class IotSimulatorService {
   private readonly logger = new Logger(IotSimulatorService.name);
 
   // Named Graph URIs cho tổ chức dữ liệu tốt hơn
-  private readonly TRAFFIC_GRAPH = 'http://opendatafithou.org/graph/iot-traffic';
+  private readonly TRAFFIC_GRAPH =
+    'http://opendatafithou.org/graph/iot-traffic';
   private readonly FLOOD_GRAPH = 'http://opendatafithou.org/graph/iot-flood';
 
   // Mock data sources - Traffic Cameras tại Hà Nội
@@ -150,7 +151,9 @@ ${observations.join('\n')}
 
       // Gửi vào Fuseki
       await this.fusekiService.update(sparql);
-      this.logger.log(`Traffic simulation completed: ${this.trafficCameras.length} cameras updated`);
+      this.logger.log(
+        `Traffic simulation completed: ${this.trafficCameras.length} cameras updated`,
+      );
     } catch (error) {
       this.logger.error('Error in traffic simulation:', error.message);
     }
@@ -216,7 +219,9 @@ ${observations.join('\n')}
 
       // Gửi vào Fuseki
       await this.fusekiService.update(sparql);
-      this.logger.log(`Flood simulation completed: ${this.floodSensors.length} sensors updated`);
+      this.logger.log(
+        `Flood simulation completed: ${this.floodSensors.length} sensors updated`,
+      );
     } catch (error) {
       this.logger.error('Error in flood simulation:', error.message);
     }

@@ -27,10 +27,10 @@ import { OverpassModule } from '../overpass/overpass.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }), 
+    ConfigModule.forRoot({ isGlobal: true }),
     DiscoveryModule,
     WikidataModule,
-    OverpassModule
+    OverpassModule,
   ],
   providers: [ChatbotService, SmartSearchService, ChatToolsRegistry],
   controllers: [ChatbotController],

@@ -15,7 +15,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { CHAT_TOOL_METADATA } from '../common/decorators/chat-tools.decorator';
@@ -25,7 +24,7 @@ import { FunctionDeclaration } from '@google/generative-ai';
 export class ChatToolsRegistry implements OnModuleInit {
   // Danh sách schema để gửi cho Google
   public toolsSchema: FunctionDeclaration[] = [];
-  
+
   // Map để lưu tham chiếu thực thi: 'tool_name' => { instance, methodName }
   private toolsMap = new Map<string, { instance: any; methodName: string }>();
 
@@ -46,16 +45,18 @@ export class ChatToolsRegistry implements OnModuleInit {
 
     [...providers, ...controllers].forEach((wrapper) => {
       const { instance } = wrapper;
-      
+
       // Bỏ qua nếu instance không tồn tại (hoặc chưa khởi tạo)
       if (!instance || typeof instance !== 'object') return;
 
       // 2. Quét tất cả các method trong instance đó
-      const methodNames = this.metadataScanner.getAllMethodNames(Object.getPrototypeOf(instance));
+      const methodNames = this.metadataScanner.getAllMethodNames(
+        Object.getPrototypeOf(instance),
+      );
 
       methodNames.forEach((methodName) => {
         const methodRef = instance[methodName];
-        
+
         // 3. Kiểm tra xem method có được gắn @ChatTool không
         const metadata = this.reflector.get(CHAT_TOOL_METADATA, methodRef);
 
@@ -68,8 +69,10 @@ export class ChatToolsRegistry implements OnModuleInit {
             instance,
             methodName,
           });
-          
-          console.log(`[Chat Tools Registry] Registered tool: ${metadata.name}`);
+
+          console.log(
+            `[Chat Tools Registry] Registered tool: ${metadata.name}`,
+          );
         }
       });
     });

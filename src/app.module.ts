@@ -26,6 +26,7 @@ import { WikidataModule } from './wikidata/wikidata.module';
 import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
 import { InfluxDBModule } from './influxdb/influxdb.module';
+import { NgsiLdModule } from './ngsi-ld/ngsi-ld.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { InfluxDBModule } from './influxdb/influxdb.module';
     OverpassModule,
     AdminModule,
     InfluxDBModule,
+    NgsiLdModule,
   ],
   controllers: [AppController],
   providers: [AppService],
