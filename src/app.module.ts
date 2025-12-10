@@ -16,8 +16,9 @@
  */
 
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { FusekiModule } from './fuseki/fuseki.module';
@@ -26,6 +27,7 @@ import { WikidataModule } from './wikidata/wikidata.module';
 import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
 import { InfluxDBModule } from './influxdb/influxdb.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -33,7 +35,23 @@ import { InfluxDBModule } from './influxdb/influxdb.module';
       envFilePath: ['.env.development', '.env'],
       isGlobal: true,
     }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        type: 'mysql',
+        host: configService.get('DB_HOST', 'localhost'),
+        port: configService.get('DB_PORT', 3306),
+        username: configService.get('DB_USERNAME', 'root'),
+        password: configService.get('DB_PASSWORD', ''),
+        database: configService.get('DB_DATABASE', 'opendatafithou'),
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        synchronize: configService.get('NODE_ENV') !== 'production', // Auto-sync trong dev
+        logging: configService.get('NODE_ENV') === 'development',
+      }),
+    }),
     ScheduleModule.forRoot(), // Enable cron jobs
+    UsersModule,
     FusekiModule,
     ChatbotModule,
     WikidataModule,

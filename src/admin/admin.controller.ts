@@ -15,11 +15,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Controller, Get, Post, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreatePoiDto } from './dto/CreatePoiDto';
+import { AdminGuard } from '../users/guards';
 
 @Controller('admin')
+@UseGuards(AdminGuard) 
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
