@@ -15,37 +15,51 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-
-import { Controller, Get, HttpException, HttpStatus, Post, Body, BadRequestException, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Post,
+  Body,
+  BadRequestException,
+  Query,
+} from '@nestjs/common';
 import { ChatbotService } from './chatbot.service';
 import { SmartSearchService } from './smart-search.service';
 
 @Controller('chat')
 export class ChatbotController {
-    constructor(
-        private readonly chatbotService: ChatbotService,
-        private readonly smartSearchService: SmartSearchService,
-    ) {}
+  constructor(
+    private readonly chatbotService: ChatbotService,
+    private readonly smartSearchService: SmartSearchService,
+  ) {}
 
-    @Post('main')
-    async main(@Body('contents') contents: string) {
-        try {
-            const result = await this.chatbotService.main(contents);
-            return result;
-        } catch (error) {
-            throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+  @Post('main')
+  async main(@Body('contents') contents: string) {
+    try {
+      const result = await this.chatbotService.main(contents);
+      return result;
+    } catch (error) {
+      throw new HttpException(
+        'Error generating text',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
+  }
 
-    @Post('test')
-    async test(@Body('contents') contents: string) {
-         try {
-            const result = await this.chatbotService.test(contents);
-            return result;
-        } catch (error) {
-            throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+  @Post('test')
+  async test(@Body('contents') contents: string) {
+    try {
+      const result = await this.chatbotService.test(contents);
+      return result;
+    } catch (error) {
+      throw new HttpException(
+        'Error generating text',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
+  }
 
     @Post('testFC')
     async testFC(@Body() body: { contents: string; context?: { currentLocation?: { lat: number; lon: number } } }) {
@@ -58,27 +72,30 @@ export class ChatbotController {
             throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+  }
 
-    @Post('smart-search')
-    async smartSearch(@Body() body: { query: string; context?: any; mode?: 'ai' | 'traditional' }) {
-        try {
-            const { query, context, mode = 'ai' } = body;
+  @Post('smart-search')
+  async smartSearch(
+    @Body() body: { query: string; context?: any; mode?: 'ai' | 'traditional' },
+  ) {
+    try {
+      const { query, context, mode = 'ai' } = body;
 
-            if (!query || typeof query !== 'string') {
-                throw new BadRequestException('Query is required');
-            }
+      if (!query || typeof query !== 'string') {
+        throw new BadRequestException('Query is required');
+      }
 
-            if (mode === 'traditional') {
-                return await this.smartSearchService.traditionalSearch(query, context);
-            }
+      if (mode === 'traditional') {
+        return await this.smartSearchService.traditionalSearch(query, context);
+      }
 
-            return await this.smartSearchService.smartSearch(query, context);
-        } catch (error) {
-            console.error('Smart search error:', error);
-            throw new HttpException(
-                error.message || 'Smart search failed',
-                error.status || HttpStatus.INTERNAL_SERVER_ERROR
-            );
-        }
+      return await this.smartSearchService.smartSearch(query, context);
+    } catch (error) {
+      console.error('Smart search error:', error);
+      throw new HttpException(
+        error.message || 'Smart search failed',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
+  }
 }

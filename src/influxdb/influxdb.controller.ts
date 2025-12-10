@@ -15,8 +15,19 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Controller, Get, Post, Query, Body, BadRequestException } from '@nestjs/common';
-import { InfluxDBService, MeasurementType, MEASUREMENTS } from './influxdb.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  Body,
+  BadRequestException,
+} from '@nestjs/common';
+import {
+  InfluxDBService,
+  MeasurementType,
+  MEASUREMENTS,
+} from './influxdb.service';
 
 @Controller('influxdb')
 export class InfluxDBController {
@@ -50,7 +61,9 @@ export class InfluxDBController {
       throw new BadRequestException('measurement is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const result = await this.influxDBService.getLatestByStation({
       stationId,
@@ -84,7 +97,9 @@ export class InfluxDBController {
       throw new BadRequestException('measurement is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const results = await this.influxDBService.getHistoryByStation({
       stationId,
@@ -115,7 +130,9 @@ export class InfluxDBController {
       throw new BadRequestException('measurement is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const results = await this.influxDBService.getLatestAllStations({
       measurement: measurement as MeasurementType,
@@ -143,7 +160,9 @@ export class InfluxDBController {
       throw new BadRequestException('uri is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const results = await this.influxDBService.getDataByDeviceUri({
       deviceUri,
@@ -185,7 +204,11 @@ export class InfluxDBController {
     @Query('lon') lon: number,
     @Query('units') units: string = 'metric',
   ) {
-    const forecast = await this.influxDBService.get5DayForecast(lat, lon, units);
+    const forecast = await this.influxDBService.get5DayForecast(
+      lat,
+      lon,
+      units,
+    );
 
     return {
       success: true,

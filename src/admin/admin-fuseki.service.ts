@@ -63,7 +63,7 @@ export class AdminFusekiService implements OnModuleInit {
     try {
       const data = await this.runSelect(q);
       this.logger.log('Admin graphs detected: ' + data.length);
-      data.forEach(r => {
+      data.forEach((r) => {
         this.logger.log(`Admin Graph: ${r.g} count=${r.count}`);
       });
       return data;
@@ -87,15 +87,19 @@ export class AdminFusekiService implements OnModuleInit {
 
     // Fuseki yêu cầu xác thực,
     // nếu không đặt user/pass trên fuseki thì comment phần này
-    const headers: Record<string, string> = { Accept: 'application/sparql-results+json' };
+    const headers: Record<string, string> = {
+      Accept: 'application/sparql-results+json',
+    };
     if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
-      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+      const basic = Buffer.from(
+        `${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`,
+      ).toString('base64');
       headers['Authorization'] = `Basic ${basic}`;
     }
 
     const res = await fetch(url, {
       method: 'GET',
-      headers
+      headers,
     });
 
     if (!res.ok) {
@@ -106,7 +110,7 @@ export class AdminFusekiService implements OnModuleInit {
     const json: any = await res.json();
     return json.results.bindings.map((b: any) => {
       const obj: Record<string, any> = {};
-      Object.keys(b).forEach(k => (obj[k] = b[k].value));
+      Object.keys(b).forEach((k) => (obj[k] = b[k].value));
       return obj;
     });
   }
@@ -136,7 +140,9 @@ export class AdminFusekiService implements OnModuleInit {
     };
 
     if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
-      const basic = Buffer.from(`${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`).toString('base64');
+      const basic = Buffer.from(
+        `${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`,
+      ).toString('base64');
       headers['Authorization'] = `Basic ${basic}`;
     }
 

@@ -23,9 +23,7 @@ import { AdminGuard } from '../users/guards';
 @Controller('admin')
 @UseGuards(AdminGuard) 
 export class AdminController {
-  constructor(
-    private readonly adminService: AdminService,
-  ) {}
+  constructor(private readonly adminService: AdminService) {}
 
   /**
    * GET /admin/stats

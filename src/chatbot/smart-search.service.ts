@@ -55,7 +55,7 @@ export class SmartSearchService {
       const result = await this.chatbotService.ChatFunctionCalling(prompt, chatContext);
 
       const parsedResult = this.parseSearchResult(result, context);
-      
+
       return parsedResult;
     } catch (error) {
       this.logger.error('Smart search error:', error);
@@ -74,23 +74,25 @@ export class SmartSearchService {
         .searchInforByName({ query, limit: 20 })
         .catch(() => []);
 
-      const merged = wikidataResults.map((r: any) => ({ 
-        ...r, 
-        source: 'wikidata',
-        score: this.calculateScore(r)
-      })).sort((a, b) => b.score - a.score);
+      const merged = wikidataResults
+        .map((r: any) => ({
+          ...r,
+          source: 'wikidata',
+          score: this.calculateScore(r),
+        }))
+        .sort((a, b) => b.score - a.score);
 
       return {
         action: 'search_results',
         suggestions: merged.slice(0, 8),
-        totalResults: merged.length
+        totalResults: merged.length,
       };
     } catch (error) {
       this.logger.error('Traditional search error:', error);
       return {
         action: 'search_results',
         suggestions: [],
-        totalResults: 0
+        totalResults: 0,
       };
     }
   }
@@ -122,7 +124,7 @@ export class SmartSearchService {
       return {
         action: 'text_response',
         message: finalResponse,
-        suggestions: []
+        suggestions: [],
       };
     }
 
@@ -138,24 +140,31 @@ export class SmartSearchService {
 
       // Handle searchInforByName (Wikidata search)
       if (functionName === 'searchInforByName' && callResult?.search_results) {
-        searchResults.push(...callResult.search_results.map((r: any) => ({
-          ...r,
-          source: 'wikidata',
-          score: this.calculateScore(r)
-        })));
+        searchResults.push(
+          ...callResult.search_results.map((r: any) => ({
+            ...r,
+            source: 'wikidata',
+            score: this.calculateScore(r),
+          })),
+        );
       }
 
       // Handle nearby searches (ATMs, hospitals, etc.)
-      if (functionName.startsWith('search') && functionName.includes('Nearby')) {
+      if (
+        functionName.startsWith('search') &&
+        functionName.includes('Nearby')
+      ) {
         if (callResult?.items) {
           // Add main items
-          nearbyResults.push(...callResult.items.map((r: any) => ({
-            ...r,
-            source: 'overpass',
-            score: this.calculateScore(r)
-          })));
-          
-          const addedPois = new Set(nearbyResults.map(r => r.poi));
+          nearbyResults.push(
+            ...callResult.items.map((r: any) => ({
+              ...r,
+              source: 'overpass',
+              score: this.calculateScore(r),
+            })),
+          );
+
+          const addedPois = new Set(nearbyResults.map((r) => r.poi));
           callResult.items.forEach((item: any) => {
             if (item.relatedEntities && Array.isArray(item.relatedEntities)) {
               item.relatedEntities.forEach((related: any) => {
@@ -166,19 +175,19 @@ export class SmartSearchService {
                     ...related,
                     source: 'overpass',
                     score: this.calculateScore(related),
-                    relatedEntities: [] // Don't nest relations
+                    relatedEntities: [], // Don't nest relations
                   });
                 }
               });
             }
           });
         }
-        
+
         // Extract radius from arguments
         if (args?.radiusKm) {
           radiusKm = args.radiusKm;
         }
-        
+
         if (args?.lat && args?.lon) {
           searchCenter = { lat: args.lat, lon: args.lon };
         }
@@ -193,19 +202,22 @@ export class SmartSearchService {
     // Determine action based on results
     if (nearbyResults.length > 0) {
       // Determine center point - prioritize searchCenter from function args
-      const center = searchCenter 
-        || (geocodeResult ? { lat: geocodeResult.lat, lon: geocodeResult.lng } : null)
-        || context?.currentLocation 
-        || null;
+      const center =
+        searchCenter ||
+        (geocodeResult
+          ? { lat: geocodeResult.lat, lon: geocodeResult.lng }
+          : null) ||
+        context?.currentLocation ||
+        null;
 
       return {
         action: 'nearby_search',
         message: finalResponse,
         params: {
           center,
-          radiusKm
+          radiusKm,
         },
-        results: nearbyResults
+        results: nearbyResults,
       };
     }
 
@@ -213,7 +225,7 @@ export class SmartSearchService {
       return {
         action: 'location_search',
         message: finalResponse,
-        suggestions: this.rankSuggestions(searchResults)
+        suggestions: this.rankSuggestions(searchResults),
       };
     }
 
@@ -222,12 +234,14 @@ export class SmartSearchService {
         action: 'show_location',
         message: finalResponse,
         location: geocodeResult,
-        suggestions: [{
-          name: 'Location Found',
-          coordinates: [geocodeResult.lng, geocodeResult.lat],
-          source: 'geocode',
-          score: 100
-        }]
+        suggestions: [
+          {
+            name: 'Location Found',
+            coordinates: [geocodeResult.lng, geocodeResult.lat],
+            source: 'geocode',
+            score: 100,
+          },
+        ],
       };
     }
 
@@ -235,7 +249,7 @@ export class SmartSearchService {
     return {
       action: 'text_response',
       message: finalResponse,
-      suggestions: []
+      suggestions: [],
     };
   }
 
@@ -270,7 +284,7 @@ export class SmartSearchService {
       wikidata: 10,
       overpass: 8,
       fuseki: 6,
-      geocode: 5
+      geocode: 5,
     };
     score += sourceBonus[result.source] || 0;
 
@@ -282,9 +296,9 @@ export class SmartSearchService {
    */
   private rankSuggestions(results: any[]): any[] {
     return results
-      .map(r => ({
+      .map((r) => ({
         ...r,
-        score: r.score || this.calculateScore(r)
+        score: r.score || this.calculateScore(r),
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);

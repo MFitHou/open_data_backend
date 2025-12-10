@@ -15,14 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Controller, Get, HttpException, HttpStatus, Post, Body, BadRequestException, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Post,
+  Body,
+  BadRequestException,
+  Query,
+} from '@nestjs/common';
 import { FusekiService } from './fuseki.service';
 import { SparqlQueryDto } from './dto/SparqlQueryDto';
 
 @Controller('fuseki')
 export class FusekiController {
   constructor(private readonly fusekiService: FusekiService) {}
-
 
   @Post('query')
   async runQuery(@Body('query') query?: SparqlQueryDto['query']) {
@@ -55,9 +63,14 @@ export class FusekiController {
       if (!lon || !lat || !radiusKm) {
         throw new BadRequestException('lon, lat, radiusKm are required');
       }
-      
-      const typesArray = types ? types.split(',').map(t => t.trim()).filter(Boolean) : undefined;
-      
+
+      const typesArray = types
+        ? types
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : undefined;
+
       const data = await this.fusekiService.searchNearby({
         lon: parseFloat(lon),
         lat: parseFloat(lat),
@@ -87,7 +100,7 @@ export class FusekiController {
       if (!type) {
         throw new BadRequestException('type parameter is required');
       }
-      
+
       const data = await this.fusekiService.getPOIsByType({
         type: type.trim(),
         limit: limit ? parseInt(limit, 10) : 100,
@@ -111,7 +124,7 @@ export class FusekiController {
       if (!uri) {
         throw new BadRequestException('uri parameter is required');
       }
-      
+
       const data = await this.fusekiService.getPOIByUri({
         uri: uri.trim(),
         language: language || 'en',
@@ -126,14 +139,12 @@ export class FusekiController {
   }
 
   @Post('device-locations')
-  async getDeviceLocations(
-    @Body('deviceUris') deviceUris?: string[],
-  ) {
+  async getDeviceLocations(@Body('deviceUris') deviceUris?: string[]) {
     try {
       if (!deviceUris || deviceUris.length === 0) {
         throw new BadRequestException('deviceUris array is required');
       }
-      
+
       const data = await this.fusekiService.getDeviceLocations(deviceUris);
       return data;
     } catch (e: any) {

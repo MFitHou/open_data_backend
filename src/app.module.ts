@@ -58,6 +58,7 @@ import { UsersModule } from './users/users.module';
     OverpassModule,
     AdminModule,
     InfluxDBModule,
+    NgsiLdModule,
   ],
   controllers: [AppController],
   providers: [AppService],
