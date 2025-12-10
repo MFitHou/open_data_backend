@@ -331,7 +331,7 @@ export class FusekiService implements OnModuleInit {
     limit?: number;
     language?: string;
   }) {
-    const { language = 'en' } = params;
+    const { language = 'vi' } = params;
     const type = this.convertToSchemaType(params.type);
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 2000);
 
