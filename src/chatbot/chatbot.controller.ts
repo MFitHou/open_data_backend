@@ -17,13 +17,11 @@
 
 import {
   Controller,
-  Get,
   HttpException,
   HttpStatus,
   Post,
   Body,
   BadRequestException,
-  Query,
 } from '@nestjs/common';
 import { ChatbotService } from './chatbot.service';
 import { SmartSearchService } from './smart-search.service';
@@ -47,31 +45,6 @@ export class ChatbotController {
       );
     }
   }
-
-  @Post('test')
-  async test(@Body('contents') contents: string) {
-    try {
-      const result = await this.chatbotService.test(contents);
-      return result;
-    } catch (error) {
-      throw new HttpException(
-        'Error generating text',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-    @Post('testFC')
-    async testFC(@Body() body: { contents: string; context?: { currentLocation?: { lat: number; lon: number } } }) {
-         try {
-            const { contents } = body;
-            const result = await this.chatbotService.ChatFunctionCalling(contents);
-            return result;
-        } catch (error) {
-            console.error(error);
-            throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
 
   @Post('smart-search')
   async smartSearch(

@@ -93,14 +93,18 @@ export class InfluxDBService implements OnModuleInit {
   }
 
   /**
-   * Get available measurements and their fields
+   * Lấy danh sách các loại measurement và các trường dữ liệu tương ứng.
+   * @returns Đối tượng MEASUREMENTS với thông tin các loại measurement và fields.
    */
   getMeasurements() {
     return MEASUREMENTS;
   }
 
   /**
-   * Validate measurement and fields
+   * Kiểm tra hợp lệ measurement và các trường dữ liệu (fields) được yêu cầu.
+   * @param measurement Tên measurement
+   * @param fields Danh sách trường dữ liệu cần kiểm tra
+   * @throws BadRequestException nếu measurement hoặc field không hợp lệ
    */
   private validateMeasurement(measurement: string, fields?: string[]): void {
     if (!MEASUREMENTS[measurement as MeasurementType]) {
@@ -122,7 +126,11 @@ export class InfluxDBService implements OnModuleInit {
   }
 
   /**
-   * Get latest data for a specific station
+   * Lấy dữ liệu mới nhất cho một trạm (station) cụ thể.
+   * @param params.stationId ID trạm
+   * @param params.measurement Loại measurement
+   * @param params.fields (Tùy chọn) Danh sách trường dữ liệu cần lấy
+   * @returns Dữ liệu mới nhất của trạm hoặc null nếu không có dữ liệu
    */
   async getLatestByStation(params: {
     stationId: string;
@@ -168,7 +176,7 @@ export class InfluxDBService implements OnModuleInit {
         return null;
       }
 
-      // Aggregate results by field
+      // Format the result
       const data: Record<string, number | null> = {};
       let latestTime = '';
 
@@ -196,15 +204,22 @@ export class InfluxDBService implements OnModuleInit {
   }
 
   /**
-   * Get historical data for a specific station
+   * Lấy dữ liệu lịch sử cho một trạm cụ thể trong khoảng thời gian xác định.
+   * @param params.stationId ID trạm
+   * @param params.measurement Loại measurement
+   * @param params.fields (Tùy chọn) Danh sách trường dữ liệu
+   * @param params.start Thời gian bắt đầu (ví dụ: "-1h", "-24h", ISO timestamp)
+   * @param params.stop (Tùy chọn) Thời gian kết thúc (default: "now()")
+   * @param params.aggregateWindow (Tùy chọn) Khoảng thời gian gom nhóm (ví dụ: "1m", "5m")
+   * @returns Mảng các điểm dữ liệu lịch sử
    */
   async getHistoryByStation(params: {
     stationId: string;
     measurement: MeasurementType;
     fields?: string[];
-    start: string; // e.g., "-1h", "-24h", "-7d", or ISO timestamp
-    stop?: string; // e.g., "now()", or ISO timestamp
-    aggregateWindow?: string; // e.g., "1m", "5m", "1h"
+    start: string; 
+    stop?: string; 
+    aggregateWindow?: string; 
   }): Promise<SensorDataPoint[]> {
     const {
       stationId,
@@ -272,7 +287,10 @@ export class InfluxDBService implements OnModuleInit {
   }
 
   /**
-   * Get latest data for all stations of a measurement type
+   * Lấy dữ liệu mới nhất cho tất cả các trạm của một loại measurement.
+   * @param params.measurement Loại measurement
+   * @param params.fields (Tùy chọn) Danh sách trường dữ liệu
+   * @returns Mảng dữ liệu mới nhất của tất cả các trạm
    */
   async getLatestAllStations(params: {
     measurement: MeasurementType;
@@ -351,7 +369,12 @@ export class InfluxDBService implements OnModuleInit {
   }
 
   /**
-   * Get data by device URI (for integration with Fuseki POI)
+   * Lấy dữ liệu của một thiết bị IoT theo deviceUri (dùng cho tích hợp với Fuseki POI).
+   * Nếu không truyền measurement, sẽ lấy dữ liệu của tất cả các measurement.
+   * @param params.deviceUri URI thiết bị
+   * @param params.measurement (Tùy chọn) Loại measurement
+   * @param params.fields (Tùy chọn) Danh sách trường dữ liệu
+   * @returns Mảng dữ liệu của thiết bị
    */
   async getDataByDeviceUri(params: {
     deviceUri: string;
@@ -360,8 +383,7 @@ export class InfluxDBService implements OnModuleInit {
   }): Promise<StationData[]> {
     const { deviceUri, measurement, fields } = params;
 
-    // Extract station ID from device URI
-    // Format: urn:ngsi-ld:Device:Hanoi:station:HoGuom -> HoGuom
+    // Phân tích deviceUri để lấy stationId
     const stationId = deviceUri.split(':').pop() || deviceUri;
 
     this.logger.debug(
@@ -377,7 +399,7 @@ export class InfluxDBService implements OnModuleInit {
       return result ? [result] : [];
     }
 
-    // If no measurement specified, get data from all measurements
+    // Nếu không có measurement, lấy tất cả các measurement
     const allResults: StationData[] = [];
 
     for (const m of Object.keys(MEASUREMENTS) as MeasurementType[]) {
@@ -385,13 +407,12 @@ export class InfluxDBService implements OnModuleInit {
         const result = await this.getLatestByStation({
           stationId,
           measurement: m,
-          fields: undefined, // Get all fields
+          fields: undefined, 
         });
         if (result && Object.values(result.data).some((v) => v !== null)) {
           allResults.push(result);
         }
       } catch (e) {
-        // Skip measurements that don't have data for this station
         this.logger.debug(`No ${m} data for station ${stationId}`);
       }
     }
@@ -400,7 +421,9 @@ export class InfluxDBService implements OnModuleInit {
   }
 
   /**
-   * Execute custom Flux query
+   * Thực thi một truy vấn Flux tuỳ chỉnh do người dùng truyền vào.
+   * @param query Chuỗi truy vấn Flux
+   * @returns Mảng kết quả truy vấn
    */
   async executeQuery(query: string): Promise<any[]> {
     this.logger.debug(`Executing custom query: ${query}`);
@@ -428,6 +451,13 @@ export class InfluxDBService implements OnModuleInit {
     }
   }
 
+  /**
+   * Lấy dự báo thời tiết 5 ngày từ OpenWeatherMap API cho một vị trí (lat, lon).
+   * @param lat Vĩ độ
+   * @param lon Kinh độ
+   * @param units Đơn vị nhiệt độ (default: "metric")
+   * @returns Dữ liệu dự báo thời tiết đã được format lại
+   */
   async get5DayForecast(lat: number, lon: number, units: string = 'metric') {
     try {
       const baseUrl = this.configService.get<string>(
@@ -472,6 +502,11 @@ export class InfluxDBService implements OnModuleInit {
     }
   }
 
+  /**
+   * Định dạng lại dữ liệu dự báo thời tiết từ OpenWeatherMap về dạng chuẩn cho frontend.
+   * @param data Dữ liệu gốc từ OpenWeatherMap
+   * @returns Đối tượng dự báo đã format
+   */
   private formatForecastData(data: any) {
     return {
       city: {

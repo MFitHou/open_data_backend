@@ -36,7 +36,12 @@ export class SmartSearchService {
   ) {}
 
   /**
-   * Smart search using AI function calling
+   * Thực hiện tìm kiếm thông minh sử dụng AI function calling.
+   * Gửi prompt đã được xây dựng (có thể kèm vị trí hiện tại) tới ChatbotService,
+   * sau đó phân tích kết quả trả về từ AI để xác định loại kết quả (gợi ý địa điểm, kết quả gần đây, v.v.).
+   * @param query Câu truy vấn tìm kiếm của người dùng
+   * @param context Ngữ cảnh tìm kiếm (vị trí hiện tại, truy vấn trước đó)
+   * @returns Kết quả tìm kiếm đã được phân tích và chuẩn hóa
    */
   async smartSearch(query: string, context?: SearchContext) {
     try {
@@ -64,7 +69,11 @@ export class SmartSearchService {
   }
 
   /**
-   * Traditional search (fallback or parallel search)
+   * Thực hiện tìm kiếm truyền thống (không dùng AI), chủ yếu dựa vào Wikidata.
+   * Dùng khi AI không trả về kết quả hoặc để so sánh song song.
+   * @param query Câu truy vấn tìm kiếm của người dùng
+   * @param context Ngữ cảnh tìm kiếm (vị trí hiện tại, truy vấn trước đó)
+   * @returns Danh sách gợi ý địa điểm từ Wikidata
    */
   async traditionalSearch(query: string, context?: SearchContext) {
     try {
@@ -98,7 +107,10 @@ export class SmartSearchService {
   }
 
   /**
-   * Build contextualized search prompt
+   * Xây dựng prompt tìm kiếm có ngữ cảnh (vị trí hiện tại, truy vấn trước đó) để gửi cho AI.
+   * @param query Câu truy vấn tìm kiếm của người dùng
+   * @param context Ngữ cảnh tìm kiếm (vị trí hiện tại, truy vấn trước đó)
+   * @returns Chuỗi prompt hoàn chỉnh
    */
   private buildSearchPrompt(query: string, context?: SearchContext): string {
     let prompt = query;
@@ -115,7 +127,11 @@ export class SmartSearchService {
   }
 
   /**
-   * Parse function calling results into structured response
+   * Phân tích kết quả trả về từ AI function calling thành cấu trúc dữ liệu chuẩn hóa.
+   * Xác định loại kết quả (gần đây, gợi ý, vị trí, chỉ trả lời text, v.v.).
+   * @param result Kết quả trả về từ ChatbotService.ChatFunctionCalling
+   * @param context Ngữ cảnh tìm kiếm (vị trí hiện tại, truy vấn trước đó)
+   * @returns Object kết quả đã chuẩn hóa để frontend dễ xử lý
    */
   private parseSearchResult(result: any, context?: SearchContext) {
     const { finalResponse, functionCalls } = result;
@@ -128,7 +144,7 @@ export class SmartSearchService {
       };
     }
 
-    // Analyze function calls to determine action
+    // Tập hợp kết quả từ các function calls
     const searchResults: any[] = [];
     const nearbyResults: any[] = [];
     let geocodeResult: any = null;
@@ -138,7 +154,7 @@ export class SmartSearchService {
     for (const call of functionCalls) {
       const { functionName, result: callResult, arguments: args } = call;
 
-      // Handle searchInforByName (Wikidata search)
+      // Thực hiện xử lý kết quả dựa trên tên hàm được gọi
       if (functionName === 'searchInforByName' && callResult?.search_results) {
         searchResults.push(
           ...callResult.search_results.map((r: any) => ({
@@ -149,13 +165,13 @@ export class SmartSearchService {
         );
       }
 
-      // Handle nearby searches (ATMs, hospitals, etc.)
+      // Xử lý tìm kiếm gần đây (ATM, bệnh viện, v.v.)
       if (
         functionName.startsWith('search') &&
         functionName.includes('Nearby')
       ) {
         if (callResult?.items) {
-          // Add main items
+          // Thêm các mục chính
           nearbyResults.push(
             ...callResult.items.map((r: any) => ({
               ...r,
@@ -168,14 +184,13 @@ export class SmartSearchService {
           callResult.items.forEach((item: any) => {
             if (item.relatedEntities && Array.isArray(item.relatedEntities)) {
               item.relatedEntities.forEach((related: any) => {
-                // Only add if has coordinates and not duplicate
                 if (related.lon && related.lat && !addedPois.has(related.poi)) {
                   addedPois.add(related.poi);
                   nearbyResults.push({
                     ...related,
                     source: 'overpass',
                     score: this.calculateScore(related),
-                    relatedEntities: [], // Don't nest relations
+                    relatedEntities: [], 
                   });
                 }
               });
@@ -183,7 +198,7 @@ export class SmartSearchService {
           });
         }
 
-        // Extract radius from arguments
+        // Cập nhật radius và center nếu có trong args
         if (args?.radiusKm) {
           radiusKm = args.radiusKm;
         }
@@ -193,15 +208,14 @@ export class SmartSearchService {
         }
       }
 
-      // Handle geocoding
+      // Xử lý geocode
       if (functionName === 'fetchGeocodeByName' && callResult) {
         geocodeResult = callResult;
       }
     }
 
-    // Determine action based on results
+    // Xác định loại kết quả để trả về
     if (nearbyResults.length > 0) {
-      // Determine center point - prioritize searchCenter from function args
       const center =
         searchCenter ||
         (geocodeResult
@@ -245,7 +259,6 @@ export class SmartSearchService {
       };
     }
 
-    // Default: just text response
     return {
       action: 'text_response',
       message: finalResponse,
@@ -254,32 +267,35 @@ export class SmartSearchService {
   }
 
   /**
-   * Calculate relevance score for ranking
+   * Tính điểm relevance cho một kết quả tìm kiếm để phục vụ việc xếp hạng.
+   * Ưu tiên các kết quả có tọa độ, mô tả, hình ảnh, loại, và nguồn dữ liệu uy tín.
+   * @param result Đối tượng kết quả tìm kiếm
+   * @returns Số điểm relevance
    */
   private calculateScore(result: any): number {
     let score = 50; // Base score
 
-    // Has coordinates
+    // Có tọa độ
     if (result.coordinates || (result.lat && result.lon)) {
       score += 20;
     }
 
-    // Has description
+    // Có mô tả
     if (result.description) {
       score += 15;
     }
 
-    // Has image
+    // Có hình ảnh
     if (result.image) {
       score += 10;
     }
 
-    // Has type/category
+    // Có loại/nhóm
     if (result.type || result.amenity || result.highway) {
       score += 5;
     }
 
-    // Source priority
+    // Ưu tiên nguồn dữ liệu
     const sourceBonus = {
       wikidata: 10,
       overpass: 8,
@@ -292,7 +308,9 @@ export class SmartSearchService {
   }
 
   /**
-   * Rank and sort suggestions
+   * Xếp hạng và sắp xếp các gợi ý tìm kiếm theo điểm relevance.
+   * @param results Danh sách kết quả tìm kiếm
+   * @returns Danh sách gợi ý đã được xếp hạng (tối đa 10)
    */
   private rankSuggestions(results: any[]): any[] {
     return results

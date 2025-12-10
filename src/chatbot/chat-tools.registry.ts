@@ -15,6 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+
+
+/**
+ * ChatToolsRegistry
+ * 
+ * Registry quản lý các "chat tools" được đánh dấu bằng decorator @ChatTool trong hệ thống NestJS.
+ * 
+ * - Tự động quét tất cả các providers/controllers để tìm các method có decorator @ChatTool.
+ * - Lưu metadata schema của từng tool để phục vụ tích hợp với Google Generative AI hoặc các hệ thống LLM khác.
+ * - Cho phép thực thi tool theo tên, truyền tham số động.
+ * - Được sử dụng để mở rộng khả năng của chatbot, cho phép gọi các hàm nghiệp vụ từ AI.
+ * 
+ * Quy trình hoạt động:
+ * 1. Khi khởi tạo module, tự động quét và đăng ký các tool.
+ * 2. Lưu schema và tham chiếu thực thi vào map.
+ * 3. Cho phép thực thi tool theo tên từ bất kỳ đâu trong hệ thống.
+ */
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { CHAT_TOOL_METADATA } from '../common/decorators/chat-tools.decorator';
@@ -22,7 +39,7 @@ import { FunctionDeclaration } from '@google/generative-ai';
 
 @Injectable()
 export class ChatToolsRegistry implements OnModuleInit {
-  // Danh sách schema để gửi cho Google
+  // Danh sách schema
   public toolsSchema: FunctionDeclaration[] = [];
 
   // Map để lưu tham chiếu thực thi: 'tool_name' => { instance, methodName }
@@ -39,7 +56,7 @@ export class ChatToolsRegistry implements OnModuleInit {
   }
 
   private discoverTools() {
-    // 1. Lấy tất cả các controllers và providers trong ứng dụng
+    //Lấy tất cả các controllers và providers trong ứng dụng
     const providers = this.discoveryService.getProviders();
     const controllers = this.discoveryService.getControllers();
 
@@ -49,7 +66,7 @@ export class ChatToolsRegistry implements OnModuleInit {
       // Bỏ qua nếu instance không tồn tại (hoặc chưa khởi tạo)
       if (!instance || typeof instance !== 'object') return;
 
-      // 2. Quét tất cả các method trong instance đó
+      //Quét tất cả các method trong instance đó
       const methodNames = this.metadataScanner.getAllMethodNames(
         Object.getPrototypeOf(instance),
       );
@@ -57,11 +74,10 @@ export class ChatToolsRegistry implements OnModuleInit {
       methodNames.forEach((methodName) => {
         const methodRef = instance[methodName];
 
-        // 3. Kiểm tra xem method có được gắn @ChatTool không
+        //Kiểm tra xem method có được gắn @ChatTool không
         const metadata = this.reflector.get(CHAT_TOOL_METADATA, methodRef);
 
         if (metadata) {
-          // Lưu schema
           this.toolsSchema.push(metadata);
 
           // Lưu tham chiếu để gọi sau này
@@ -84,7 +100,7 @@ export class ChatToolsRegistry implements OnModuleInit {
     if (!tool) {
       throw new Error(`Tool ${toolName} not found`);
     }
-    // Gọi hàm thực tế từ Service gốc
+    // Gọi hàm từ Service gốc
     return await tool.instance[tool.methodName](args);
   }
 }

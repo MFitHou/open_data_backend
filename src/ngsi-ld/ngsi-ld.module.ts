@@ -21,17 +21,6 @@ import { NgsiLdService } from './ngsi-ld.service';
 import { FusekiModule } from '../fuseki/fuseki.module';
 import { InfluxDBModule } from '../influxdb/influxdb.module';
 
-/**
- * NGSI-LD Module
- *
- * Implements ETSI ISG CIM NGSI-LD standard API for Smart City data access.
- * Provides standardized endpoints for:
- * - Entity retrieval (combining static Fuseki data with IoT InfluxDB data)
- * - Entity discovery with geo-spatial filtering
- * - Temporal (historical) data queries
- *
- * @see https://www.etsi.org/deliver/etsi_gs/CIM/001_099/009/01.06.01_60/gs_CIM009v010601p.pdf
- */
 @Module({
   imports: [FusekiModule, InfluxDBModule],
   controllers: [NgsiLdController],

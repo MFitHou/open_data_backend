@@ -166,12 +166,18 @@ export class ChatbotService implements OnModuleInit {
     this.logger.log('GeminiService initialized');
   }
 
+  /**
+   * Xử lý truy vấn hội thoại chính.
+   * Phân tích loại câu hỏi, gọi Gemini AI để sinh câu trả lời hoặc thực hiện tìm kiếm địa điểm, dịch vụ công, v.v.
+   * Trả về kết quả phù hợp với loại câu hỏi (thông tin địa điểm, tìm kiếm dịch vụ, hoặc trả lời thông thường).
+   * @param contents Nội dung câu hỏi từ người dùng
+   */
   async main(contents: string) {
     if (!this.model) {
       throw new BadRequestException('Gemini not configured');
     }
 
-    const ananlysisPrompt = await this.test(contents);
+    const ananlysisPrompt = await this.analyzeQuestion(contents);
     if (
       ananlysisPrompt.questionType === 'normal_question' ||
       ananlysisPrompt.questionType === 'location_info'
@@ -393,7 +399,13 @@ export class ChatbotService implements OnModuleInit {
     }
   }
 
-  async test(contents: string) {
+  /**
+   * Phân tích câu hỏi để xác định loại truy vấn (tìm kiếm địa điểm, dịch vụ công, thông tin địa điểm, câu hỏi thường, v.v.).
+   * Sử dụng Gemini AI để phân tích hoặc fallback sang phân tích thủ công nếu gặp lỗi.
+   * Trả về object chứa loại câu hỏi và thông tin liên quan.
+   * @param contents Nội dung câu hỏi từ người dùng
+   */
+  async analyzeQuestion(contents: string) {
     if (!this.genAI) {
       throw new BadRequestException('Gemini not configured');
     }
@@ -468,7 +480,6 @@ export class ChatbotService implements OnModuleInit {
         throw new BadRequestException('Empty response text');
       }
 
-      // Parse JSON
       let analysis;
       try {
         analysis = JSON.parse(text);
@@ -488,7 +499,6 @@ export class ChatbotService implements OnModuleInit {
         analysis = JSON.parse(jsonMatch[0]);
       }
 
-      // Validate and set defaults
       if (!analysis.questionType) {
         analysis.questionType = 'unknown';
       }
@@ -507,7 +517,6 @@ export class ChatbotService implements OnModuleInit {
         throw error;
       }
 
-      // Fallback response
       const lowerContent = contents.toLowerCase();
       const publicServiceKeywords = [
         'bệnh viện',
@@ -553,6 +562,12 @@ export class ChatbotService implements OnModuleInit {
     }
   }
 
+  /**
+   * Thực hiện workflow gọi hàm chức năng (function calling) của Gemini AI.
+   * AI có thể yêu cầu gọi các tool (đã đăng ký qua ChatToolsRegistry) để lấy dữ liệu thực tế (ví dụ: tìm kiếm địa điểm, lấy tọa độ, v.v.).
+   * Quản lý vòng lặp gọi hàm và trả kết quả về cho AI, cho phép AI kết hợp dữ liệu thực tế vào câu trả lời.
+   * @param contents Nội dung hội thoại đầu vào
+   */
   async ChatFunctionCalling(contents: string) {
     if (!contents || typeof contents !== 'string') {
       throw new BadRequestException(

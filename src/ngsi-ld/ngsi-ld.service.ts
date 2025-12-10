@@ -64,9 +64,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Determine entity type from URI
-   * Device URIs contain 'sensor' or 'device'
-   * POI URIs are typically from openstreetmap.org
+   * Xác định loại entity từ URI (Device hoặc PointOfInterest).
+   * @param uri URI của entity
+   * @returns Loại entity
    */
   private getEntityTypeFromUri(uri: string): string {
     if (
@@ -80,7 +80,11 @@ export class NgsiLdService {
   }
 
   /**
-   * Create NGSI-LD Property object
+   * Tạo đối tượng Property theo chuẩn NGSI-LD.
+   * @param value Giá trị thuộc tính
+   * @param unitCode Mã đơn vị (tùy chọn)
+   * @param observedAt Thời gian quan sát (tùy chọn)
+   * @returns Đối tượng NgsiLdProperty
    */
   private createProperty(
     value: any,
@@ -97,7 +101,10 @@ export class NgsiLdService {
   }
 
   /**
-   * Create NGSI-LD GeoProperty object
+   * Tạo đối tượng GeoProperty (tọa độ) theo chuẩn NGSI-LD.
+   * @param lon Kinh độ
+   * @param lat Vĩ độ
+   * @returns Đối tượng NgsiLdGeoProperty
    */
   private createGeoProperty(lon: number, lat: number): NgsiLdGeoProperty {
     return {
@@ -110,7 +117,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Create NGSI-LD Relationship object
+   * Tạo đối tượng Relationship theo chuẩn NGSI-LD.
+   * @param object URI hoặc mảng URI của entity liên quan
+   * @returns Đối tượng NgsiLdRelationship
    */
   private createRelationship(object: string | string[]): NgsiLdRelationship {
     return {
@@ -120,34 +129,30 @@ export class NgsiLdService {
   }
 
   /**
-   * Extract entity type from rdf:type URIs
-   * Example: "http://schema.org/Playground" -> "Playground"
-   * Example: "https://smartdatamodels.org/dataModel.PointOfInterest/PointOfInterest" -> "PointOfInterest"
+   * Trích xuất loại entity từ danh sách rdf:type URIs.
+   * @param rdfTypes Mảng URI rdf:type
+   * @returns Tên loại entity (ví dụ: Playground, PointOfInterest)
    */
   private extractTypeFromRdfTypes(rdfTypes: string[]): string {
     if (!rdfTypes || rdfTypes.length === 0) {
       return 'PointOfInterest';
     }
 
-    // Look for schema.org types first (e.g., schema:Playground)
     for (const typeUri of rdfTypes) {
-      // Match schema.org types: http://schema.org/Playground
       const schemaMatch = typeUri.match(/schema\.org\/(\w+)$/);
       if (schemaMatch && schemaMatch[1] !== 'Thing') {
         return schemaMatch[1];
       }
     }
 
-    // Look for smartdatamodels types
     for (const typeUri of rdfTypes) {
-      // Match smartdatamodels: https://smartdatamodels.org/dataModel.PointOfInterest/PointOfInterest
       const smartMatch = typeUri.match(/smartdatamodels\.org\/[^\/]+\/(\w+)$/);
       if (smartMatch) {
         return smartMatch[1];
       }
     }
 
-    // Fallback: extract last segment from any URI
+    // Nếu không tìm thấy, lấy phần cuối của URI
     for (const typeUri of rdfTypes) {
       const lastSegment = typeUri.split(/[#\/]/).pop();
       if (
@@ -163,26 +168,23 @@ export class NgsiLdService {
   }
 
   /**
-   * Convert POI data to NGSI-LD format (normalized)
-   * Uses original Fuseki URI as entity ID (unique identifier in Apache Fuseki)
+   * Chuyển đổi dữ liệu POI sang định dạng NGSI-LD entity.
+   * @param poi Đối tượng POI từ Fuseki
+   * @param includeContext Có thêm @context hay không
+   * @returns Đối tượng NgsiLdEntity
    */
   private poiToNgsiLd(poi: any, includeContext: boolean = true): NgsiLdEntity {
-    // Determine entity type from rdf:types (from Fuseki)
     let entityType = 'PointOfInterest';
 
     if (poi.rdfTypes && poi.rdfTypes.length > 0) {
-      // Use rdf:type from Fuseki data
       entityType = this.extractTypeFromRdfTypes(poi.rdfTypes);
     } else if (poi.device) {
       entityType = 'Device';
     } else if (poi.leisure) {
-      // Fallback: leisure types (playground, park, etc.)
       entityType = poi.leisure.charAt(0).toUpperCase() + poi.leisure.slice(1);
     } else if (poi.amenity) {
-      // Fallback: amenity types (atm, hospital, etc.)
       entityType = poi.amenity.charAt(0).toUpperCase() + poi.amenity.slice(1);
     } else if (poi.highway) {
-      // Fallback: highway types (bus_stop, etc.)
       entityType = poi.highway
         .split('_')
         .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -191,21 +193,21 @@ export class NgsiLdService {
 
     const entity: NgsiLdEntity = {
       '@context': includeContext ? NGSI_LD_CONTEXT : [],
-      id: poi.poi, // Use original Fuseki URI as entity ID
+      id: poi.poi,
       type: entityType,
     };
 
-    // Add name
+    //Thêm name
     if (poi.name) {
       entity.name = this.createProperty(poi.name);
     }
 
-    // Add location
+    // Thêm location
     if (poi.lon !== null && poi.lat !== null) {
       entity.location = this.createGeoProperty(poi.lon, poi.lat);
     }
 
-    // Add POI-specific properties
+    // Thêm các thuộc tính chung khác
     if (poi.amenity) {
       entity.amenity = this.createProperty(poi.amenity);
     }
@@ -228,12 +230,12 @@ export class NgsiLdService {
       entity.fee = this.createProperty(poi.fee);
     }
 
-    // Add distance if available
+    // Thêm khoảng cách nếu có
     if (poi.distanceKm !== undefined && poi.distanceKm > 0) {
       entity.distance = this.createProperty(poi.distanceKm * 1000, 'MTR');
     }
 
-    // Add sensor data if available
+    // Thêm dữ liệu cảm biến nếu có
     if (poi.sensorData) {
       const { aqi, temperature, noise_level, timestamp } = poi.sensorData;
       if (aqi !== null) {
@@ -255,18 +257,17 @@ export class NgsiLdService {
       }
     }
 
-    // Add device relationship if available
+    // Thêm quan hệ thiết bị nếu có
     if (poi.device) {
       entity.hosts = this.createRelationship(poi.device);
     }
 
-    // Add topology relationships (use original URIs)
+    // Thêm các quan hệ topology (sử dụng URI gốc từ Fuseki)
     if (poi.topology && poi.topology.length > 0) {
       const isNextTo: string[] = [];
       const containedInPlace: string[] = [];
 
       for (const rel of poi.topology) {
-        // Use original Fuseki URI for related entities
         if (rel.predicate === 'isNextTo') {
           isNextTo.push(rel.related);
         } else if (rel.predicate === 'containedInPlace') {
@@ -292,7 +293,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Convert NGSI-LD entity to keyValues format
+   * Chuyển đổi NGSI-LD entity sang định dạng keyValues (giá trị thuần).
+   * @param entity Đối tượng NgsiLdEntity
+   * @returns Object key-value
    */
   private entityToKeyValues(entity: NgsiLdEntity): any {
     const keyValues: any = {
@@ -319,7 +322,10 @@ export class NgsiLdService {
   }
 
   /**
-   * Filter entity attributes based on attrs parameter
+   * Lọc thuộc tính của entity theo tham số attrs.
+   * @param entity Đối tượng NgsiLdEntity
+   * @param attrs Chuỗi tên thuộc tính cần giữ lại (phân cách bằng dấu phẩy)
+   * @returns Đối tượng NgsiLdEntity đã lọc
    */
   private filterAttributes(entity: NgsiLdEntity, attrs?: string): NgsiLdEntity {
     if (!attrs) return entity;
@@ -337,7 +343,7 @@ export class NgsiLdService {
       }
     }
 
-    // Always include location if requested
+    // Đảm bảo luôn bao gồm location nếu có
     if (attrList.includes('location') && entity.location) {
       filtered.location = entity.location;
     }
@@ -346,9 +352,10 @@ export class NgsiLdService {
   }
 
   /**
-   * GET /ngsi-ld/v1/entities/{entityId}
-   * Retrieve the current state of a single entity
-   * entityId is the original Fuseki URI (unique identifier)
+   * Lấy thông tin chi tiết của một entity theo ID (URI).
+   * @param entityId URI entity
+   * @param params Tham số truy vấn (attrs, options)
+   * @returns Đối tượng NgsiLdEntity hoặc keyValues
    */
   async getEntity(
     entityId: string,
@@ -356,8 +363,6 @@ export class NgsiLdService {
   ): Promise<NgsiLdEntity | any> {
     this.logger.debug(`[getEntity] Fetching entity: ${entityId}`);
 
-    // entityId is the original Fuseki URI - no conversion needed
-    // Fetch POI data from Fuseki using the URI directly
     const result = await this.fusekiService.getPOIByUri({
       uri: entityId,
       language: 'en',
@@ -367,15 +372,12 @@ export class NgsiLdService {
       throw new NotFoundException(`Entity not found: ${entityId}`);
     }
 
-    // Convert to NGSI-LD format (URI is preserved as entity ID)
+    // Convert to NGSI-LD format
     let entity = this.poiToNgsiLd(result.poi);
-
-    // Filter attributes if specified
     if (params.attrs) {
       entity = this.filterAttributes(entity, params.attrs);
     }
 
-    // Convert to keyValues format if requested
     if (params.options === NgsiLdOptions.KEY_VALUES) {
       return this.entityToKeyValues(entity);
     }
@@ -384,8 +386,9 @@ export class NgsiLdService {
   }
 
   /**
-   * GET /ngsi-ld/v1/entities
-   * Query entities with filters
+   * Truy vấn danh sách entities với các bộ lọc (type, q, georel, ...).
+   * @param params Tham số truy vấn
+   * @returns Đối tượng NgsiLdEntityCollection
    */
   async queryEntities(
     params: QueryEntitiesDto,
@@ -409,7 +412,6 @@ export class NgsiLdService {
     let results: any[] = [];
     let totalCount = 0;
 
-    // Parse q parameter for amenity filter
     let amenityFilter: string | undefined;
     if (q) {
       const amenityMatch = q.match(/amenity\s*==\s*"?([^"]+)"?/);
@@ -418,9 +420,7 @@ export class NgsiLdService {
       }
     }
 
-    // Handle geo-spatial query
     if (georel && coordinates) {
-      // Parse coordinates
       let coords: number[];
       try {
         coords = JSON.parse(coordinates);
@@ -430,22 +430,19 @@ export class NgsiLdService {
         );
       }
 
-      // Parse georel to extract maxDistance
-      let maxDistance = 1000; // default 1km
+      let maxDistance = 1000; 
       const distanceMatch = georel.match(/maxDistance\s*==\s*(\d+)/);
       if (distanceMatch) {
         maxDistance = parseInt(distanceMatch[1], 10);
       }
 
-      // Convert meters to kilometers
       const radiusKm = maxDistance / 1000;
 
-      // Use Fuseki nearby search
       const searchResult = await this.fusekiService.searchNearby({
         lat: coords[1],
         lon: coords[0],
         radiusKm,
-        types: amenityFilter ? [amenityFilter] : ['atm'], // default type
+        types: amenityFilter ? [amenityFilter] : ['atm'], 
         limit: limit || 20,
         language: 'en',
       });
@@ -453,7 +450,6 @@ export class NgsiLdService {
       results = searchResult.items;
       totalCount = searchResult.count;
     } else if (type === 'Device') {
-      // Query IoT devices
       const stations = await this.influxDBService.getLatestAllStations({
         measurement: 'air_quality',
       });
@@ -469,7 +465,6 @@ export class NgsiLdService {
       }));
       totalCount = results.length;
     } else if (amenityFilter) {
-      // Query by POI type
       const typeResult = await this.fusekiService.getPOIsByType({
         type: amenityFilter,
         limit: limit || 20,
@@ -484,7 +479,6 @@ export class NgsiLdService {
       );
     }
 
-    // Apply pagination
     const paginatedResults = results.slice(
       offset || 0,
       (offset || 0) + (limit || 20),
@@ -511,9 +505,10 @@ export class NgsiLdService {
   }
 
   /**
-   * GET /ngsi-ld/v1/temporal/entities/{entityId}
-   * Retrieve historical time-series data
-   * entityId is the original Fuseki URI for the device
+   * Lấy dữ liệu lịch sử (temporal) cho một entity (chỉ hỗ trợ Device).
+   * @param entityId URI entity
+   * @param params Tham số truy vấn temporal
+   * @returns Đối tượng NgsiLdEntity chứa dữ liệu lịch sử
    */
   async getTemporalEntity(
     entityId: string,
@@ -523,7 +518,6 @@ export class NgsiLdService {
       `[getTemporalEntity] Fetching temporal data: ${entityId}`,
     );
 
-    // Check if this is a Device entity (for temporal queries)
     const entityType = this.getEntityTypeFromUri(entityId);
     if (entityType !== 'Device') {
       throw new BadRequestException(
@@ -531,10 +525,8 @@ export class NgsiLdService {
       );
     }
 
-    // Use the entityId (Fuseki URI) directly as station ID for InfluxDB
     const stationId = entityId;
 
-    // Determine which measurements to query
     let measurements: MeasurementType[] = [
       'air_quality',
       'weather',
@@ -545,7 +537,6 @@ export class NgsiLdService {
 
     if (params.attrs) {
       fieldsToQuery = params.attrs.split(',').map((a) => a.trim());
-      // Map NGSI-LD attribute names to InfluxDB fields
       const attrToField: Record<
         string,
         { measurement: MeasurementType; field: string }
@@ -563,7 +554,6 @@ export class NgsiLdService {
         waterLevel: { measurement: 'flood', field: 'water_level' },
       };
 
-      // Filter measurements based on requested attributes
       measurements = [
         ...new Set(
           fieldsToQuery
@@ -573,15 +563,11 @@ export class NgsiLdService {
       ] as MeasurementType[];
     }
 
-    // Convert ISO timestamps to InfluxDB format
     const startTime = params.timeAt;
     const endTime = params.endTimeAt;
 
-    // Calculate aggregation window if specified
     let aggregateWindow: string | undefined;
     if (params.aggrPeriodDuration) {
-      // Convert ISO 8601 duration to InfluxDB format
-      // PT1H -> 1h, PT30M -> 30m, P1D -> 1d
       const durationMatch =
         params.aggrPeriodDuration.match(/PT?(\d+)([HDMS])/i);
       if (durationMatch) {
@@ -591,21 +577,19 @@ export class NgsiLdService {
       }
     }
 
-    // Build temporal entity response
     const temporalEntity: NgsiLdEntity = {
       '@context': NGSI_LD_CONTEXT,
       id: entityId,
       type: 'Device',
     };
 
-    // Query each measurement type
+    // Truy vấn dữ liệu cho từng measurement
     for (const measurement of measurements) {
       try {
         const measurementFields = MEASUREMENTS[measurement]
           .fields as readonly string[];
         const requestedFields = fieldsToQuery
           ? measurementFields.filter((f) => {
-              // Check if any requested attr maps to this field
               const attrToField: Record<string, string> = {
                 temperature: 'temperature',
                 humidity: 'humidity',
@@ -634,7 +618,6 @@ export class NgsiLdService {
           aggregateWindow,
         });
 
-        // Group by field
         const fieldData: Record<string, any[]> = {};
         for (const point of history) {
           if (!fieldData[point.field]) {
@@ -648,7 +631,7 @@ export class NgsiLdService {
           });
         }
 
-        // Add to entity with NGSI-LD attribute names
+        // Thêm dữ liệu vào temporalEntity với tên thuộc tính NGSI-LD
         const fieldToAttr: Record<string, string> = {
           temperature: 'temperature',
           humidity: 'humidity',
@@ -665,7 +648,6 @@ export class NgsiLdService {
 
         for (const [field, values] of Object.entries(fieldData)) {
           const attrName = fieldToAttr[field] || field;
-          // Apply lastN limit if specified
           if (params.lastN && values.length > params.lastN) {
             temporalEntity[attrName] = values.slice(-params.lastN);
           } else {
@@ -681,14 +663,17 @@ export class NgsiLdService {
   }
 
   /**
-   * Get available entity types
+   * Lấy danh sách loại entity hỗ trợ (Device, PointOfInterest).
+   * @returns Mảng tên loại entity
    */
   getEntityTypes(): string[] {
     return ['Device', 'PointOfInterest'];
   }
 
   /**
-   * Get available attributes for an entity type
+   * Lấy danh sách thuộc tính cho một loại entity.
+   * @param entityType Tên loại entity
+   * @returns Mảng tên thuộc tính
    */
   getAttributes(entityType: string): string[] {
     if (entityType === 'Device') {
@@ -730,8 +715,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Get detailed information about a specific entity type
-   * NGSI-LD Specification: GET /types/{type}
+   * Lấy thông tin chi tiết về một loại entity (số lượng, thuộc tính, ...).
+   * @param typeName Tên loại entity
+   * @returns Object thông tin loại entity
    */
   async getTypeDetails(typeName: string): Promise<any> {
     const validTypes = await this.getEntityTypes();
@@ -741,18 +727,16 @@ export class NgsiLdService {
 
     const attributes = await this.getAttributes(typeName);
 
-    // Count entities of this type
     let entityCount = 0;
     try {
       if (typeName === 'Device') {
         const result = await this.fusekiService.getAllIoTStations();
         entityCount = result.stations?.length || 0;
       } else if (typeName === 'PointOfInterest') {
-        // Get approximate count from POIs using searchNearby with large radius
         const result = await this.fusekiService.searchNearby({
           lat: 21.0285,
           lon: 105.8542,
-          radiusKm: 50, // 50km radius to cover most data
+          radiusKm: 50, 
           limit: 10000,
         });
         entityCount = result.items?.length || 0;
@@ -779,7 +763,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Get the NGSI-LD attribute type for a given attribute name
+   * Xác định kiểu thuộc tính NGSI-LD cho một thuộc tính (Property, GeoProperty, Relationship).
+   * @param attrName Tên thuộc tính
+   * @returns Mảng kiểu thuộc tính
    */
   private getAttributeType(attrName: string): string[] {
     const propertyAttrs = [
@@ -820,8 +806,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Get detailed information about a specific attribute
-   * NGSI-LD Specification: GET /attributes/{attrName}
+   * Lấy thông tin chi tiết về một thuộc tính (số lượng entity có thuộc tính này, loại entity, ...).
+   * @param attrName Tên thuộc tính
+   * @returns Object thông tin thuộc tính
    */
   async getAttributeDetails(attrName: string): Promise<any> {
     const allTypes = await this.getEntityTypes();
@@ -838,7 +825,6 @@ export class NgsiLdService {
       throw new NotFoundException(`Attribute '${attrName}' not found`);
     }
 
-    // Count entities with this attribute
     let attributeCount = 0;
     for (const type of typeNames) {
       try {
@@ -873,8 +859,9 @@ export class NgsiLdService {
   }
 
   /**
-   * Query temporal data for multiple entities (batch temporal query)
-   * NGSI-LD Specification: GET /temporal/entities
+   * Truy vấn dữ liệu lịch sử cho nhiều entity.
+   * @param params Tham số truy vấn temporal (type, ids, attrs, timeAt, ...)
+   * @returns Mảng NgsiLdEntity chứa dữ liệu lịch sử
    */
   async queryTemporalEntities(params: {
     type?: string;
@@ -888,9 +875,8 @@ export class NgsiLdService {
     aggrMethod?: AggregationMethod;
     aggrPeriodDuration?: string;
   }): Promise<NgsiLdEntity[]> {
-    // First, get matching entities
     const queryParams: QueryEntitiesDto = {
-      type: params.type || 'Device', // Default to Device for temporal queries
+      type: params.type || 'Device', 
       q: params.q,
       idPattern: params.idPattern,
       attrs: params.attrs?.join(','),
@@ -899,7 +885,6 @@ export class NgsiLdService {
 
     let entities: NgsiLdEntity[] = [];
 
-    // If specific IDs provided, query each
     if (params.ids && params.ids.length > 0) {
       for (const id of params.ids) {
         try {
@@ -910,15 +895,11 @@ export class NgsiLdService {
         }
       }
     } else {
-      // Query by type/pattern
       const collection = await this.queryEntities(queryParams);
       entities = collection.entities || [];
     }
 
-    // Filter to only devices (only devices have temporal data)
     const deviceEntities = entities.filter((e) => e.type === 'Device');
-
-    // Get temporal data for each device
     const temporalEntities: NgsiLdEntity[] = [];
 
     for (const entity of deviceEntities) {
@@ -947,9 +928,9 @@ export class NgsiLdService {
     return temporalEntities;
   }
 
-  /**
-   * Get available JSON-LD contexts
-   * NGSI-LD Specification: GET /jsonldContexts
+   /**
+   * Lấy danh sách các JSON-LD context hỗ trợ.
+   * @returns Mảng thông tin context
    */
   getJsonLdContexts(): JsonLdContextInfo[] {
     return [
@@ -971,13 +952,13 @@ export class NgsiLdService {
   }
 
   /**
-   * Get a specific JSON-LD context by ID
-   * NGSI-LD Specification: GET /jsonldContexts/{contextId}
+   * Lấy thông tin chi tiết về một JSON-LD context theo ID.
+   * @param contextId ID context
+   * @returns Đối tượng context hoặc thông tin context
    */
   getJsonLdContextById(contextId: string): Record<string, unknown> | JsonLdContextInfo {
     const contexts = this.getJsonLdContexts();
 
-    // Try to find by full ID or partial match
     const context = contexts.find(
       (c) =>
         c.id === contextId ||
@@ -989,7 +970,6 @@ export class NgsiLdService {
       throw new NotFoundException(`JSON-LD Context '${contextId}' not found`);
     }
 
-    // Return the actual context content based on the context type
     if (context.id === 'urn:ngsi-ld:Context:core') {
       return {
         '@context': {

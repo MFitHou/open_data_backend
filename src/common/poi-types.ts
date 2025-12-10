@@ -66,7 +66,7 @@ export type HighwayType = (typeof HIGHWAY_TYPES)[number];
 export type LeisureType = (typeof LEISURE_TYPES)[number];
 
 /**
- * Classify a POI type into amenity, highway, or leisure category
+ * Classify POI type into amenity, highway, or leisure 
  */
 export function classifyPoiType(type: string): {
   amenity: string | null;
@@ -99,7 +99,6 @@ export function classifyPoiType(type: string): {
     };
   }
 
-  // Default to amenity for unknown types
   return {
     amenity: typeKey,
     highway: null,
