@@ -18,10 +18,38 @@
 import { Controller, Get } from '@nestjs/common';
 import { AppService } from './app.service';
 
+/**
+ * AppController - Root controller cho ứng dụng
+ * 
+ * Controller cơ bản xử lý requests tới root path (/).
+ * Trong production, controller này thường được dùng cho:
+ * - Health check endpoint
+ * - API documentation redirect
+ * - Basic application info
+ * 
+ * Endpoints:
+ * - GET / (hoặc GET /api/ do global prefix)
+ * 
+ * Note: Các feature endpoints chính nằm ở các feature controllers:
+ * - /api/fuseki/* - FusekiController
+ * - /api/admin/* - AdminController
+ * - /api/chatbot/* - ChatbotController
+ * - /api/auth/* - AuthController (UsersModule)
+ */
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  /**
+   * getHello - Endpoint test cơ bản
+   * 
+   * GET /api/
+   * 
+   * @returns String "Hello World!" để verify API đang hoạt động
+   * 
+   * @example
+   * Response: "Hello World!"
+   */
   @Get()
   getHello(): string {
     return this.appService.getHello();

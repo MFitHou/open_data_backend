@@ -17,8 +17,23 @@
 
 import { Injectable } from '@nestjs/common';
 
+/**
+ * Service này hiện tại chỉ chứa method getHello() đơn giản để test.
+ * Trong production, service này có thể được mở rộng để xử lý:
+ * - Health check endpoints
+ * - Application-level business logic
+ * - Common utilities được chia sẻ giữa các modules
+ * 
+ * Hiện tại, các feature chính được implement trong các feature modules:
+ * - FusekiModule, AdminModule, ChatbotModule, etc.
+ */
 @Injectable()
 export class AppService {
+  /**
+   * getHello - Method test cơ bản
+   * 
+   * @returns String "Hello World!" để verify service hoạt động
+   */
   getHello(): string {
     return 'Hello World!';
   }

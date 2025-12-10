@@ -18,30 +18,51 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { AdminFusekiService } from './admin-fuseki.service';
 
+/**
+ * Service chính xử lý business logic cho Admin Dashboard
+ * 
+ * Chức năng chính:
+ * - Quản lý POI (Point of Interest): CRUD operations (Create, Read, Delete)
+ * - Thống kê dashboard: Tổng số POI, phân loại theo type, top categories
+ * - Schema introspection: Tự động phát hiện cấu trúc dữ liệu trong RDF graphs
+ * - Multi-graph management: Quản lý 20+ loại POI khác nhau trong Named Graphs riêng biệt
+ * 
+ * Kiến trúc dữ liệu:
+ * - Mỗi loại POI được lưu trong một Named Graph riêng (VD: graph/atm, graph/hospital)
+ * - Sử dụng FIWARE PointOfInterest ontology + Schema.org cho metadata
+ * - Coordinates lưu dưới dạng WKT (Well-Known Text): POINT(lon lat)
+ * - Hỗ trợ multilingual với language tags (@vi, @en)
+ * 
+ * Dependencies:
+ * - AdminFusekiService: Xử lý SPARQL queries với Apache Jena Fuseki
+ * - Logger: NestJS built-in logger cho debugging
+ */
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
   constructor(private readonly fusekiService: AdminFusekiService) {}
 
-  /**
-   * Cache schema của mỗi graph để tránh query lại nhiều lần
-   */
   private schemaCache: Map<string, string[]> = new Map();
 
   /**
-   * Introspection: Tự động phát hiện các thuộc tính có trong graph
-   * @param graphUrl - URL của Named Graph
-   * @returns Danh sách các predicates (thuộc tính) có thực tế trong data
+   * Tự động phát hiện cấu trúc schema của một Named Graph
+   * 
+   * Schema Introspection giúp:
+   * - Biết được graph có những thuộc tính (predicates) nào
+   * - Tạo dynamic queries chỉ lấy properties thực sự tồn tại
+   * - Tránh query hardcoded properties không có trong data
+   * - Hiển thị schema cho admin khi thêm POI mới
+   * 
+   * @param graphUrl URL đầy đủ của Named Graph (VD: http://localhost:3030/graph/atm)
+   * @returns Mảng URIs của các predicates (thuộc tính) có trong graph
    */
   private async introspectGraphSchema(graphUrl: string): Promise<string[]> {
-    // Kiểm tra cache
     if (this.schemaCache.has(graphUrl)) {
       return this.schemaCache.get(graphUrl)!;
     }
 
     try {
-      // Query để lấy tất cả predicates có trong graph
       const query = `
         PREFIX ext: <http://opendatafithou.org/def/extension/>
         PREFIX geo: <http://www.opengis.net/ont/geosparql#>
@@ -64,7 +85,6 @@ export class AdminService {
       const results = await this.fusekiService.executeSelect(query);
       const predicates = results.map((row) => row.predicate).filter(Boolean);
 
-      // Lưu vào cache
       this.schemaCache.set(graphUrl, predicates);
       this.logger.log(`Graph ${graphUrl} has ${predicates.length} properties`);
 
@@ -76,58 +96,42 @@ export class AdminService {
   }
 
   /**
-   * Graph mapping - Map từ type tới graph URL
-   * Tên type chuẩn hóa theo file TTL (dùng underscore và dấu gạch nối)
-   * Hỗ trợ cả underscore và hyphen format để tương thích
+   * Mapping giữa POI type và Named Graph URL trong Fuseki
+   * 
+   * Named Graph organization:
+   * - Mỗi loại POI được lưu trong một graph riêng biệt
+   * - Format: http://localhost:3030/graph/{type}
+   * - Tách biệt giúp query nhanh hơn và dễ quản lý
+   * 
+   * @returns Object mapping type (lowercase) → graph URL
    */
   private getGraphMap(): Record<string, string> {
     return {
-      // ATM & Banking
       atm: process.env.FUSEKI_GRAPH_ATM || 'http://localhost:3030/graph/atm',
       bank: process.env.FUSEKI_GRAPH_BANK || 'http://localhost:3030/graph/bank',
-      
-      // Transport
       bus_stop: process.env.FUSEKI_GRAPH_BUS_STOP || 'http://localhost:3030/graph/bus_stop',
-      
-      // Food & Drink
       cafe: process.env.FUSEKI_GRAPH_CAFE || 'http://localhost:3030/graph/cafe',
       restaurant: process.env.FUSEKI_GRAPH_RESTAURANT || 'http://localhost:3030/graph/restaurant',
-      
-      // Retail
       convenience_store: process.env.FUSEKI_GRAPH_CONVENIENCE_STORE || 'http://localhost:3030/graph/convenience_store',
       supermarket: process.env.FUSEKI_GRAPH_SUPERMARKET || 'http://localhost:3030/graph/supermarket',
       marketplace: process.env.FUSEKI_GRAPH_MARKETPLACE || 'http://localhost:3030/graph/marketplace',
       warehouse: process.env.FUSEKI_GRAPH_WAREHOUSE || 'http://localhost:3030/graph/warehouse',
-      
-      // Healthcare
       hospital: process.env.FUSEKI_GRAPH_HOSPITAL || 'http://localhost:3030/graph/hospital',
       clinic: process.env.FUSEKI_GRAPH_CLINIC || 'http://localhost:3030/graph/clinic',
       pharmacy: process.env.FUSEKI_GRAPH_PHARMACY || 'http://localhost:3030/graph/pharmacy',
-      
-      // Education
       school: process.env.FUSEKI_GRAPH_SCHOOL || 'http://localhost:3030/graph/school',
       university: process.env.FUSEKI_GRAPH_UNIVERSITY || 'http://localhost:3030/graph/university',
       kindergarten: process.env.FUSEKI_GRAPH_KINDERGARTEN || 'http://localhost:3030/graph/kindergarten',
-      
-      // Recreation
       playground: process.env.FUSEKI_GRAPH_PLAY_GROUNDS || 'http://localhost:3030/graph/playground',
       park: process.env.FUSEKI_GRAPH_PARK || 'http://localhost:3030/graph/park',
-      
-      // Infrastructure
       charging_station: process.env.FUSEKI_GRAPH_CHARGING_STATION || 'http://localhost:3030/graph/charging_station',
       fuel_station: process.env.FUSEKI_GRAPH_FUEL_STATION || 'http://localhost:3030/graph/fuel_station',
       parking: process.env.FUSEKI_GRAPH_PARKING || 'http://localhost:3030/graph/parking',
-      
-      // Public Services
       post_office: process.env.FUSEKI_GRAPH_POST_OFFICE || 'http://localhost:3030/graph/post_office',
       library: process.env.FUSEKI_GRAPH_LIBRARY || 'http://localhost:3030/graph/library',
       community_centre: process.env.FUSEKI_GRAPH_COMMUNITY_CENTER || 'http://localhost:3030/graph/community_centre',
-      
-      // Emergency Services
       police: process.env.FUSEKI_GRAPH_POLICE || 'http://localhost:3030/graph/police',
       fire_station: process.env.FUSEKI_GRAPH_FIRE_STATION || 'http://localhost:3030/graph/fire_station',
-      
-      // Utilities
       drinking_water: process.env.FUSEKI_GRAPH_DRINKING_WATER || 'http://localhost:3030/graph/drinking_water',
       public_toilet: process.env.FUSEKI_GRAPH_TOILETS || 'http://localhost:3030/graph/public_toilet',
       waste_basket: process.env.FUSEKI_GRAPH_WASTE_BASKET || 'http://localhost:3030/graph/waste_basket',
@@ -135,8 +139,18 @@ export class AdminService {
   }
 
   /**
-   * Lấy schema (cấu trúc thuộc tính) của một loại POI
-   * Trả về danh sách các thuộc tính có thực tế trong data
+   * Lấy schema/cấu trúc thuộc tính của một loại POI
+   * 
+   * Workflow:
+   * 1. Validate type parameter
+   * 2. Map type → Named Graph URL
+   * 3. Introspect graph để lấy actual predicates có trong data
+   * 4. Transform predicates thành field definitions (key, predicate, label)
+   * 5. Ensure essential fields (name, coordinates, address) luôn có
+   * 
+   * @param type Loại POI (atm, hospital, school, etc.)
+   * @returns Object chứa schema definition
+   * @throws BadRequestException nếu type không hợp lệ
    */
   async getPoiSchema(type: string) {
     try {
@@ -149,10 +163,8 @@ export class AdminService {
         );
       }
 
-      // Lấy schema từ introspection
       const predicates = await this.introspectGraphSchema(graphUrl);
 
-      // Map predicates thành field names thân thiện
       const fields = predicates.map((predicate) => {
         const parts = predicate.split(/[/#]/);
         const fieldName = parts[parts.length - 1];
@@ -163,7 +175,6 @@ export class AdminService {
         };
       });
 
-      // Thêm các field bắt buộc nếu chưa có
       const essentialFields = ['name', 'coordinates', 'address'];
       essentialFields.forEach((key) => {
         if (!fields.find((f) => f.key === key || f.key.includes(key))) {
@@ -185,10 +196,22 @@ export class AdminService {
   }
 
   /**
-   * Generate field label từ field name
+   * Generate human-readable label từ field name
+   * 
+   * Transforms:
+   * - camelCase → Camel Case
+   * - snake_case → Snake Case
+   * - firstName → First Name
+   * 
+   * Examples:
+   * - "osmId" → "Osm Id"
+   * - "addr_street" → "Addr Street"
+   * - "name" → "Name"
+   * 
+   * @param fieldName Field name gốc 
+   * @returns Readable label (Title Case)
    */
   private generateFieldLabel(fieldName: string): string {
-    // Convert camelCase/snake_case to Title Case
     return fieldName
       .replace(/([A-Z])/g, ' $1')
       .replace(/_/g, ' ')
@@ -197,8 +220,21 @@ export class AdminService {
   }
 
   /**
-   * Lấy thống kê tổng quan cho dashboard
-   * Đếm số lượng các loại POI trong database từ tất cả các graph
+   * Lấy thống kê tổng quan cho Admin Dashboard
+   * 
+   * Thống kê bao gồm:
+   * - totalPois: Tổng số POI trong toàn hệ thống
+   * - graphCount: Số loại POI khác nhau (số Named Graphs)
+   * - breakdown: Object {type: count} cho từng loại
+   * - topCategories: Top 5 loại có nhiều POI nhất
+   * 
+   * Performance optimization:
+   * - Query tất cả graphs đồng thời (Promise.all)
+   * - Mỗi graph có 1 COUNT query riêng
+   * - Timeout gracefully nếu graph nào lỗi
+   * - Log warnings cho failed queries
+   * 
+   * @returns Object chứa thống kê tổng hợp
    */
   async getDashboardStats() {
     try {
@@ -208,7 +244,6 @@ export class AdminService {
       const breakdown: Record<string, number> = {};
       let totalPois = 0;
 
-      // Query template để đếm số POI trong một graph
       const createCountQuery = (graphUrl: string) => `
         PREFIX fiware: <https://smartdatamodels.org/dataModel.PointOfInterest/>
         
@@ -220,7 +255,6 @@ export class AdminService {
         }
       `;
 
-      // Tạo promises để đếm từng loại POI
       const countPromises = Object.entries(graphMap).map(async ([type, graphUrl]) => {
         try {
           const query = createCountQuery(graphUrl);
@@ -233,10 +267,8 @@ export class AdminService {
         }
       });
 
-      // Thực thi tất cả queries song song
       const results = await Promise.all(countPromises);
 
-      // Tổng hợp kết quả
       results.forEach(({ type, count }) => {
         breakdown[type] = count;
         totalPois += count;
@@ -246,7 +278,6 @@ export class AdminService {
         totalPois,
         graphCount: Object.keys(graphMap).length,
         breakdown,
-        // Top 5 categories
         topCategories: Object.entries(breakdown)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
@@ -436,24 +467,6 @@ export class AdminService {
       .replace(/\n/g, '\\n')
       .replace(/\r/g, '\\r')
       .replace(/\t/g, '\\t');
-  }
-
-  /**
-   * Lấy dữ liệu traffic IoT cho map
-   * DEPRECATED - IoT simulation không còn được sử dụng
-   */
-  async getTrafficData() {
-    this.logger.warn('getTrafficData() is deprecated - IoT simulation has been disabled');
-    return [];
-  }
-
-  /**
-   * Lấy dữ liệu flood IoT cho map
-   * DEPRECATED - IoT simulation không còn được sử dụng
-   */
-  async getFloodData() {
-    this.logger.warn('getFloodData() is deprecated - IoT simulation has been disabled');
-    return [];
   }
 
   /**

@@ -29,6 +29,32 @@ import { AdminModule } from './admin/admin.module';
 import { InfluxDBModule } from './influxdb/influxdb.module';
 import { UsersModule } from './users/users.module';
 
+/**
+ * AppModule - Root module của ứng dụng OpenDataFitHou Backend
+ * 
+ * Module chính khởi tạo và quản lý toàn bộ application:
+ * 
+ * Configuration:
+ * - ConfigModule: Load environment variables từ .env files
+ * - TypeOrmModule: Kết nối MySQL database cho user management
+ * - ScheduleModule: Hỗ trợ cron jobs và scheduled tasks
+ * 
+ * Database Configuration:
+ * - Type: MySQL
+ * - Auto-synchronize: Chỉ trong development (tự động tạo/cập nhật schema)
+ * - Logging: Bật SQL logging trong development mode
+ * - Entity Auto-discovery: Tự động scan và load tất cả *.entity.ts files
+ * 
+ * Feature Modules:
+ * 1. UsersModule: Quản lý authentication và users
+ * 2. FusekiModule: Tương tác với Apache Jena Fuseki (RDF triplestore)
+ * 3. ChatbotModule: Chatbot AI với SPARQL query generation
+ * 4. WikidataModule: Fetch dữ liệu từ Wikidata SPARQL endpoint
+ * 5. OverpassModule: Query OpenStreetMap qua Overpass API
+ * 6. AdminModule: Admin dashboard để quản lý POI data
+ * 7. InfluxDBModule: Time-series data storage cho IoT sensors
+ * 
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -46,11 +72,11 @@ import { UsersModule } from './users/users.module';
         password: configService.get('DB_PASSWORD', ''),
         database: configService.get('DB_DATABASE', 'opendatafithou'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') !== 'production', // Auto-sync trong dev
+        synchronize: configService.get('NODE_ENV') !== 'production',
         logging: configService.get('NODE_ENV') === 'development',
       }),
     }),
-    ScheduleModule.forRoot(), // Enable cron jobs
+    ScheduleModule.forRoot(),
     UsersModule,
     FusekiModule,
     ChatbotModule,

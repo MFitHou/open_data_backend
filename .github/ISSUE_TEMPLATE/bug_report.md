@@ -1,38 +1,38 @@
 ---
-name: Bug report
-about: Create a report to help us improve
+name: Báo cáo lỗi
+about: Tạo báo cáo để giúp chúng tôi cải thiện
 title: "[Bug]: ..."
 labels: bug
 assignees: honganhss
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**Mô tả lỗi**
+Mô tả rõ ràng và súc tích về lỗi là gì.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Các bước tái hiện**
+Các bước để tái hiện hành vi:
+1. Truy cập '...'
+2. Nhấp vào '....'
+3. Cuộn xuống '....'
+4. Thấy lỗi
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**Hành vi mong đợi**
+Mô tả rõ ràng và súc tích về những gì bạn mong đợi xảy ra.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Ảnh chụp màn hình**
+Nếu có, hãy thêm ảnh chụp màn hình để giúp giải thích vấn đề của bạn.
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Desktop (vui lòng hoàn thành thông tin sau):**
+ - Hệ điều hành: [ví dụ: Windows 11]
+ - Trình duyệt: [ví dụ: chrome, edge]
+ - Phiên bản: [ví dụ: 22]
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+**Smartphone (vui lòng hoàn thành thông tin sau):**
+ - Thiết bị: [ví dụ: iPhone 15]
+ - Hệ điều hành: [ví dụ: iOS 17.1]
+ - Trình duyệt: [ví dụ: safari, chrome]
+ - Phiên bản: [ví dụ: 22]
 
-**Additional context**
-Add any other context about the problem here.
+**Ngữ cảnh bổ sung**
+Thêm bất kỳ ngữ cảnh nào khác về vấn đề tại đây.

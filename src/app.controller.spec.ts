@@ -19,6 +19,25 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+/**
+ * AppController Unit Tests
+ * 
+ * Test suite cho AppController sử dụng Jest testing framework.
+ * 
+ * Test Coverage:
+ * - Khởi tạo controller với dependencies (AppService)
+ * - Verify endpoint GET / trả về "Hello World!"
+ * 
+ * Testing Strategy:
+ * - beforeEach: Tạo testing module mới cho mỗi test case
+ * - Isolated unit tests: Không phụ thuộc external services
+ * - Mock-free: Sử dụng real AppService implementation (vì logic đơn giản)
+ * 
+ * Mở rộng trong tương lai:
+ * - Thêm tests cho health check endpoints
+ * - Integration tests với các feature modules
+ * - E2E tests cho full API flow
+ */
 describe('AppController', () => {
   let appController: AppController;
 
