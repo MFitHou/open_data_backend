@@ -15,7 +15,7 @@ Các bản thử nghiệm (beta, draft) có thể không nhận được cập n
 
 Nếu bạn phát hiện lỗ hổng bảo mật hoặc rủi ro trong quá trình thu thập dữ liệu, vui lòng thông báo cho chúng tôi qua:  
 
-- **Email**: honganh068204@gmail.com  
+- **Email**: mfithou@gmail.com  
 
 ### Quy trình xử lý
 
