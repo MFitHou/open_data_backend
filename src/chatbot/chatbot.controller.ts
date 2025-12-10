@@ -64,15 +64,14 @@ export class ChatbotController {
     @Post('testFC')
     async testFC(@Body() body: { contents: string; context?: { currentLocation?: { lat: number; lon: number } } }) {
          try {
-            const { contents, context } = body;
-            const result = await this.chatbotService.ChatFunctionCalling(contents, context);
+            const { contents } = body;
+            const result = await this.chatbotService.ChatFunctionCalling(contents);
             return result;
         } catch (error) {
             console.error(error);
             throw new HttpException('Error generating text', HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-  }
 
   @Post('smart-search')
   async smartSearch(

@@ -52,7 +52,7 @@ export class SmartSearchService {
         }
       } : undefined;
       
-      const result = await this.chatbotService.ChatFunctionCalling(prompt, chatContext);
+      const result = await this.chatbotService.ChatFunctionCalling(prompt);
 
       const parsedResult = this.parseSearchResult(result, context);
 

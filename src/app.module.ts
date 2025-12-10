@@ -28,6 +28,7 @@ import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
 import { InfluxDBModule } from './influxdb/influxdb.module';
 import { UsersModule } from './users/users.module';
+import { NgsiLdModule } from './ngsi-ld/ngsi-ld.module';
 
 @Module({
   imports: [

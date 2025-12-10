@@ -19,11 +19,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import session = require('express-session');
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
+
+  // Tăng giới hạn body size cho JSON và urlencoded (cho SPARQL queries lớn)
+  app.use(bodyParser.json({ limit: '50mb' }));
+  app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
   // Cấu hình validation pipe global
   app.useGlobalPipes(
