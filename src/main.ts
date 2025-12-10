@@ -16,18 +16,46 @@
  */
 
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import session = require('express-session');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
 
+  // Cấu hình validation pipe global
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // Loại bỏ các property không có trong DTO
+      forbidNonWhitelisted: true, // Throw error nếu có property không hợp lệ
+      transform: true, // Tự động transform types
+    }),
+  );
+
+  // Cấu hình session middleware
+  app.use(
+    session({
+      name: 'opendatafithou.sid',
+      secret: process.env.SESSION_SECRET || 'opendatafithou-secret-key',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        maxAge: parseInt(process.env.SESSION_MAX_AGE || '86400000', 10), // 24 giờ
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        path: '/',
+      },
+    }),
+  );
+
   app.enableCors({
-    origin: '*', 
+    origin: process.env.CORS_ORIGINS || 'http://localhost:5173',
     methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type,Authorization',
-    credentials: true,
+    credentials: true, // Quan trọng: cho phép gửi cookies
     maxAge: 3600,
   });
 
@@ -35,6 +63,7 @@ async function bootstrap() {
   await app.listen(port);
 
   console.log(`🚀 Backend API running on: http://localhost:${port}/api`);
-  console.log(`🌐 CORS: Public (allows all origins)`);
+  console.log(`🌐 CORS: ${process.env.CORS_ORIGINS || 'http://localhost:5173'}`);
+  console.log(`🔐 Session-based authentication enabled`);
 }
 bootstrap();
