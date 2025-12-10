@@ -26,24 +26,6 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_is_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng quản lý tài khoản người dùng';
 
--- Tạo bảng user_contributions để track đóng góp
-CREATE TABLE IF NOT EXISTS user_contributions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL COMMENT 'ID người dùng',
-  contribution_type ENUM('add_poi', 'edit_poi', 'report_issue', 'verify_poi') NOT NULL COMMENT 'Loại đóng góp',
-  entity_type VARCHAR(50) DEFAULT NULL COMMENT 'Loại entity (atm, hospital, school...)',
-  entity_id VARCHAR(255) DEFAULT NULL COMMENT 'ID của entity được đóng góp',
-  description TEXT DEFAULT NULL COMMENT 'Mô tả chi tiết',
-  status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending' COMMENT 'Trạng thái đóng góp',
-  points INT DEFAULT 0 COMMENT 'Điểm thưởng cho đóng góp',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  INDEX idx_user_id (user_id),
-  INDEX idx_contribution_type (contribution_type),
-  INDEX idx_status (status),
-  INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng theo dõi đóng góp của người dùng';
 
 -- Tạo bảng audit_logs để theo dõi hoạt động
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -63,21 +45,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng log audit các hoạt động trong hệ thống';
 
--- Tạo view để xem thống kê người dùng
-CREATE OR REPLACE VIEW user_stats AS
-SELECT 
-  u.id,
-  u.username,
-  u.email,
-  u.full_name,
-  u.role,
-  u.is_active,
-  COUNT(uc.id) as total_contributions,
-  SUM(uc.points) as total_points,
-  u.created_at
-FROM users u
-LEFT JOIN user_contributions uc ON u.id = uc.user_id AND uc.status = 'approved'
-GROUP BY u.id;
+
 
 -- Thông báo hoàn thành
 SELECT 'Migration 001_create_users_table.sql completed successfully!' as message;

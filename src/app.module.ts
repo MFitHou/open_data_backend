@@ -28,6 +28,7 @@ import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
 import { InfluxDBModule } from './influxdb/influxdb.module';
 import { UsersModule } from './users/users.module';
+import { CrowdsourceModule } from './crowdsource/crowdsource.module';
 
 /**
  * AppModule - Root module của ứng dụng OpenDataFitHou Backend
@@ -53,6 +54,7 @@ import { UsersModule } from './users/users.module';
  * 5. OverpassModule: Query OpenStreetMap qua Overpass API
  * 6. AdminModule: Admin dashboard để quản lý POI data
  * 7. InfluxDBModule: Time-series data storage cho IoT sensors
+ * 8. CrowdsourceModule: Crowdsourced POI updates với consensus mechanism
  * 
  */
 @Module({
@@ -72,7 +74,7 @@ import { UsersModule } from './users/users.module';
         password: configService.get('DB_PASSWORD', ''),
         database: configService.get('DB_DATABASE', 'opendatafithou'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') !== 'production',
+        synchronize: false, // Tắt auto-sync để tránh conflict với data cũ
         logging: configService.get('NODE_ENV') === 'development',
       }),
     }),
@@ -84,6 +86,7 @@ import { UsersModule } from './users/users.module';
     OverpassModule,
     AdminModule,
     InfluxDBModule,
+    CrowdsourceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
