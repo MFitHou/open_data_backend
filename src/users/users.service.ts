@@ -23,10 +23,6 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-// import { InjectRepository } from '@nestjs/typeorm';
-// import { Repository } from 'typeorm';
-// import * as bcrypt from 'bcrypt';
-// import { User } from './entities/user.entity';
 import {
   RegisterDto,
   LoginDto,
@@ -57,7 +53,7 @@ export class UsersService {
     {
       id: 1,
       username: 'admin',
-      password: 'admin123', // Không mã hóa để đơn giản
+      password: 'admin123', 
       email: 'admin@opendatafithou.org',
       fullName: 'Administrator',
       role: 'admin',
