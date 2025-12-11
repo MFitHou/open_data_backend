@@ -15,17 +15,24 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Controller, Get, Post, Query, Body, BadRequestException } from '@nestjs/common';
-import { InfluxDBService, MeasurementType, MEASUREMENTS } from './influxdb.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  Body,
+  BadRequestException,
+} from '@nestjs/common';
+import {
+  InfluxDBService,
+  MeasurementType,
+  MEASUREMENTS,
+} from './influxdb.service';
 
 @Controller('influxdb')
 export class InfluxDBController {
   constructor(private readonly influxDBService: InfluxDBService) {}
 
-  /**
-   * Get available measurements and their fields
-   * GET /influxdb/measurements
-   */
   @Get('measurements')
   getMeasurements() {
     return {
@@ -33,10 +40,6 @@ export class InfluxDBController {
     };
   }
 
-  /**
-   * Get latest data for a specific station
-   * GET /influxdb/latest?stationId=HoGuom&measurement=air_quality&fields=pm25,pm10
-   */
   @Get('latest')
   async getLatest(
     @Query('stationId') stationId: string,
@@ -50,7 +53,9 @@ export class InfluxDBController {
       throw new BadRequestException('measurement is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const result = await this.influxDBService.getLatestByStation({
       stationId,
@@ -64,10 +69,6 @@ export class InfluxDBController {
     };
   }
 
-  /**
-   * Get historical data for a specific station
-   * GET /influxdb/history?stationId=HoGuom&measurement=air_quality&start=-1h&aggregateWindow=5m
-   */
   @Get('history')
   async getHistory(
     @Query('stationId') stationId: string,
@@ -84,7 +85,9 @@ export class InfluxDBController {
       throw new BadRequestException('measurement is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const results = await this.influxDBService.getHistoryByStation({
       stationId,
@@ -102,10 +105,6 @@ export class InfluxDBController {
     };
   }
 
-  /**
-   * Get latest data for all stations of a measurement type
-   * GET /influxdb/stations?measurement=air_quality&fields=pm25,pm10
-   */
   @Get('stations')
   async getAllStations(
     @Query('measurement') measurement: string,
@@ -115,7 +114,9 @@ export class InfluxDBController {
       throw new BadRequestException('measurement is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const results = await this.influxDBService.getLatestAllStations({
       measurement: measurement as MeasurementType,
@@ -129,10 +130,6 @@ export class InfluxDBController {
     };
   }
 
-  /**
-   * Get data by device URI (integration with Fuseki POI)
-   * GET /influxdb/device?uri=urn:ngsi-ld:Device:Hanoi:station:HoGuom&measurement=weather
-   */
   @Get('device')
   async getByDeviceUri(
     @Query('uri') deviceUri: string,
@@ -143,7 +140,9 @@ export class InfluxDBController {
       throw new BadRequestException('uri is required');
     }
 
-    const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()) : undefined;
+    const fields = fieldsStr
+      ? fieldsStr.split(',').map((f) => f.trim())
+      : undefined;
 
     const results = await this.influxDBService.getDataByDeviceUri({
       deviceUri,
@@ -159,11 +158,6 @@ export class InfluxDBController {
     };
   }
 
-  /**
-   * Execute custom Flux query (admin only)
-   * POST /influxdb/query
-   * Body: { "query": "from(bucket: \"iot_data\") |> range(start: -1h) |> limit(n: 10)" }
-   */
   @Post('query')
   async executeQuery(@Body('query') query: string) {
     if (!query) {
@@ -185,7 +179,11 @@ export class InfluxDBController {
     @Query('lon') lon: number,
     @Query('units') units: string = 'metric',
   ) {
-    const forecast = await this.influxDBService.get5DayForecast(lat, lon, units);
+    const forecast = await this.influxDBService.get5DayForecast(
+      lat,
+      lon,
+      units,
+    );
 
     return {
       success: true,

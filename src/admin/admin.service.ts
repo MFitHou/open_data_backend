@@ -159,7 +159,7 @@ export class AdminService {
 
       if (!graphUrl) {
         throw new BadRequestException(
-          `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}`
+          `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}`,
         );
       }
 
@@ -178,7 +178,11 @@ export class AdminService {
       const essentialFields = ['name', 'coordinates', 'address'];
       essentialFields.forEach((key) => {
         if (!fields.find((f) => f.key === key || f.key.includes(key))) {
-          fields.unshift({ key, predicate: '', label: this.generateFieldLabel(key) });
+          fields.unshift({
+            key,
+            predicate: '',
+            label: this.generateFieldLabel(key),
+          });
         }
       });
 
@@ -284,7 +288,9 @@ export class AdminService {
           .map(([type, count]) => ({ type, count })),
       };
 
-      this.logger.log(`Dashboard stats: ${totalPois} total POIs across ${Object.keys(graphMap).length} categories`);
+      this.logger.log(
+        `Dashboard stats: ${totalPois} total POIs across ${Object.keys(graphMap).length} categories`,
+      );
       return stats;
     } catch (error) {
       this.logger.error('Error fetching dashboard stats:', error);
@@ -315,9 +321,11 @@ export class AdminService {
 
       // Generate OSM-like ID (số nguyên lớn)
       const osmId = Math.floor(Math.random() * 9000000000) + 1000000000;
-      
+
       // Tạo URI theo format: urn:ngsi-ld:PointOfInterest:Hanoi:{type}:{osmId}
-      const typeNormalized = data.type.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const typeNormalized = data.type
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_');
       const poiUri = `urn:ngsi-ld:PointOfInterest:Hanoi:${typeNormalized}:${osmId}`;
 
       // Lấy graph URI từ graph map
@@ -326,34 +334,37 @@ export class AdminService {
 
       // Mapping type sang schema.org class
       const typeSchemaMap: Record<string, string> = {
-        'atm': 'schema:FinancialService',
-        'bank': 'schema:BankOrCreditUnion',
-        'hospital': 'schema:Hospital',
-        'clinic': 'schema:MedicalClinic',
-        'public_toilet': 'schema:PublicToilet',
-        'bus_stop': 'schema:BusStop',
-        'school': 'schema:School',
-        'university': 'schema:CollegeOrUniversity',
-        'library': 'schema:Library',
-        'post_office': 'schema:PostOffice',
-        'police': 'schema:PoliceStation',
-        'fire_station': 'schema:FireStation',
-        'park': 'schema:Park',
-        'playground': 'schema:Playground',
-        'parking': 'schema:ParkingFacility',
-        'restaurant': 'schema:Restaurant',
-        'cafe': 'schema:CafeOrCoffeeShop',
-        'supermarket': 'schema:GroceryStore',
-        'pharmacy': 'schema:Pharmacy',
-        'fuel_station': 'schema:GasStation',
-        'charging_station': 'schema:ChargingStation',
+        atm: 'schema:FinancialService',
+        bank: 'schema:BankOrCreditUnion',
+        hospital: 'schema:Hospital',
+        clinic: 'schema:MedicalClinic',
+        public_toilet: 'schema:PublicToilet',
+        bus_stop: 'schema:BusStop',
+        school: 'schema:School',
+        university: 'schema:CollegeOrUniversity',
+        library: 'schema:Library',
+        post_office: 'schema:PostOffice',
+        police: 'schema:PoliceStation',
+        fire_station: 'schema:FireStation',
+        park: 'schema:Park',
+        playground: 'schema:Playground',
+        parking: 'schema:ParkingFacility',
+        restaurant: 'schema:Restaurant',
+        cafe: 'schema:CafeOrCoffeeShop',
+        supermarket: 'schema:GroceryStore',
+        pharmacy: 'schema:Pharmacy',
+        fuel_station: 'schema:GasStation',
+        charging_station: 'schema:ChargingStation',
       };
 
-      const schemaType = typeSchemaMap[data.type.toLowerCase()] || 'schema:Place';
+      const schemaType =
+        typeSchemaMap[data.type.toLowerCase()] || 'schema:Place';
 
       // Escape chuỗi để tránh SPARQL injection
       const escapedName = this.escapeSparqlString(data.name);
-      const escapedAddress = data.address ? this.escapeSparqlString(data.address) : null;
+      const escapedAddress = data.address
+        ? this.escapeSparqlString(data.address)
+        : null;
 
       // Tạo WKT string: POINT(lon lat)
       const wktString = `POINT(${data.lon} ${data.lat})`;
@@ -422,11 +433,13 @@ export class AdminService {
             }
           }
         `;
-        
+
         try {
           await this.fusekiService.update(deleteQuery);
         } catch (error) {
-          this.logger.warn(`Failed to delete from ${graphUrl}: ${error.message}`);
+          this.logger.warn(
+            `Failed to delete from ${graphUrl}: ${error.message}`,
+          );
         }
       });
 
@@ -490,7 +503,7 @@ export class AdminService {
 
       // Determine which graphs to query
       let graphUrls: string[] = [];
-      
+
       if (!type || type === 'all') {
         // Query all graphs
         graphUrls = Object.values(graphMap);
@@ -499,7 +512,7 @@ export class AdminService {
         const graphUrl = graphMap[type.toLowerCase()];
         if (!graphUrl) {
           throw new BadRequestException(
-            `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}, all`
+            `Invalid type. Allowed: ${Object.keys(graphMap).join(', ')}, all`,
           );
         }
         graphUrls = [graphUrl];
@@ -513,7 +526,9 @@ export class AdminService {
           const pois = await this.fetchPoisFromGraph(graphUrl, validLimit * 2, isLightweight);
           allPois.push(...pois);
         } catch (err) {
-          this.logger.warn(`Failed to fetch from graph ${graphUrl}: ${err.message}`);
+          this.logger.warn(
+            `Failed to fetch from graph ${graphUrl}: ${err.message}`,
+          );
           // Continue with other graphs
         }
       }
@@ -936,7 +951,7 @@ export class AdminService {
 
       // Lấy schema (danh sách predicates) có trong graph
       const predicates = await this.introspectGraphSchema(graphUrl);
-      
+
       if (predicates.length === 0) {
         this.logger.warn(`No predicates found in graph ${graphUrl}`);
         return [];
@@ -976,7 +991,12 @@ export class AdminService {
       const results = await this.fusekiService.executeSelect(query);
 
       // Transform results thành POI objects
-      return this.transformGraphResults(results, predicates, predicateMap, graphUrl);
+      return this.transformGraphResults(
+        results,
+        predicates,
+        predicateMap,
+        graphUrl,
+      );
     } catch (error) {
       this.logger.error(`Error fetching from graph ${graphUrl}:`, error);
       return [];
@@ -992,12 +1012,11 @@ export class AdminService {
     predicateMap: Record<string, string>,
     graphUrl: string,
   ): any[] {
-
     return results
       .map((row) => {
         try {
           const typeFromGraph = this.extractTypeFromGraph(graphUrl);
-          
+
           // Build POI object động từ predicates
           const poi: any = {
             id: row.s,
@@ -1008,13 +1027,13 @@ export class AdminService {
           predicates.forEach((predicate) => {
             const varName = predicateMap[predicate];
             const value = row[varName];
-            
+
             if (!value) return; // Skip null values
 
             // Extract field name từ predicate URI
             const parts = predicate.split(/[/#]/);
             let fieldName = parts[parts.length - 1];
-            
+
             // Special handling cho các field quan trọng
             if (fieldName === 'asWKT' || predicate.includes('asWKT')) {
               poi.wkt = value;
@@ -1091,7 +1110,9 @@ export class AdminService {
 
           // Fallback cho name
           if (!poi.name) {
-            poi.name = poi.osm_id ? `POI #${poi.osm_id}` : `${typeFromGraph}_${Math.random().toString(36).substr(2, 9)}`;
+            poi.name = poi.osm_id
+              ? `POI #${poi.osm_id}`
+              : `${typeFromGraph}_${Math.random().toString(36).substr(2, 9)}`;
           }
 
           // Ensure coordinates exist
@@ -1120,7 +1141,7 @@ export class AdminService {
 
     // Regex để extract coordinates từ POINT(lon lat)
     const match = wkt.match(/POINT\s*\(\s*([\d.-]+)\s+([\d.-]+)\s*\)/i);
-    
+
     if (!match) {
       throw new Error(`Invalid WKT format: ${wkt}`);
     }

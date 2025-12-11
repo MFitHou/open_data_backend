@@ -16,12 +16,15 @@
  */
 
 import { Module } from '@nestjs/common';
-import { WikidataController } from './wikidata.controller';
-import { WikidataService } from './wikidata.service';
+import { NgsiLdController } from './ngsi-ld.controller';
+import { NgsiLdService } from './ngsi-ld.service';
+import { FusekiModule } from '../fuseki/fuseki.module';
+import { InfluxDBModule } from '../influxdb/influxdb.module';
 
 @Module({
-  controllers: [WikidataController],
-  providers: [WikidataService],
-  exports: [WikidataService],
+  imports: [FusekiModule, InfluxDBModule],
+  controllers: [NgsiLdController],
+  providers: [NgsiLdService],
+  exports: [NgsiLdService],
 })
-export class WikidataModule {}
+export class NgsiLdModule {}

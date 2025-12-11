@@ -28,7 +28,7 @@ import { OverpassModule } from './overpass/overpass.module';
 import { AdminModule } from './admin/admin.module';
 import { InfluxDBModule } from './influxdb/influxdb.module';
 import { UsersModule } from './users/users.module';
-import { CrowdsourceModule } from './crowdsource/crowdsource.module';
+import { NgsiLdModule } from './ngsi-ld/ngsi-ld.module';
 
 /**
  * AppModule - Root module của ứng dụng OpenDataFitHou Backend
@@ -89,6 +89,7 @@ import { CrowdsourceModule } from './crowdsource/crowdsource.module';
     InfluxDBModule,
     // TEMPORARY: CrowdsourceModule bị tắt do yêu cầu TypeORM/Database
     // CrowdsourceModule,
+    NgsiLdModule,
   ],
   controllers: [AppController],
   providers: [AppService],

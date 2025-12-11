@@ -15,30 +15,34 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Injectable, Logger, OnModuleInit, BadRequestException } from "@nestjs/common";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { ChatTool } from "../common/decorators/chat-tools.decorator";
-import { ChatToolsRegistry } from "./chat-tools.registry";
-
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  BadRequestException,
+} from '@nestjs/common';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { ChatTool } from '../common/decorators/chat-tools.decorator';
+import { ChatToolsRegistry } from './chat-tools.registry';
 
 @Injectable()
 export class ChatbotService implements OnModuleInit {
-    private readonly logger = new Logger(ChatbotService.name);
-    private genAI: GoogleGenerativeAI;
-    private model: any;
+  private readonly logger = new Logger(ChatbotService.name);
+  private genAI: GoogleGenerativeAI;
+  private model: any;
 
-    constructor(private readonly chatToolsRegistry: ChatToolsRegistry) {}
+  constructor(private readonly chatToolsRegistry: ChatToolsRegistry) {}
 
-    onModuleInit() {
-        if (!process.env.GEMINI_API_KEY) {
-            this.logger.warn('GEMINI_API_KEY not set');
-            return;
-        }
-        
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        this.model = this.genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: `### SYSTEM ROLE
+  onModuleInit() {
+    if (!process.env.GEMINI_API_KEY) {
+      this.logger.warn('GEMINI_API_KEY not set');
+      return;
+    }
+
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    this.model = this.genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      systemInstruction: `### SYSTEM ROLE
                                 You are a specialized **Location & Travel Intelligence Assistant**. You are friendly, knowledgeable about the physical world, and helpful with general daily conversation.
                                 **ALWAY RESPONSE ENGLISH**
                                 ### PERMITTED CAPABILITIES (WHAT YOU CAN DO)
@@ -156,41 +160,50 @@ export class ChatbotService implements OnModuleInit {
                                 ### REFUSAL STRATEGY
                                 When a user asks for a prohibited topic, kindly decline and **pivot** back to your persona.
                                 * *Bad Response:* "I cannot do that." (Too dry)
-                                * *Good Response:* "I'm not built for complex math/coding, I'm just a travel guide! But I can help you figure out how long it takes to drive to Da Nang."`
-        });
-        
-        this.logger.log("GeminiService initialized");
+                                * *Good Response:* "I'm not built for complex math/coding, I'm just a travel guide! But I can help you figure out how long it takes to drive to Da Nang."`,
+    });
+
+    this.logger.log('GeminiService initialized');
+  }
+
+  /**
+   * Xử lý truy vấn hội thoại chính.
+   * Phân tích loại câu hỏi, gọi Gemini AI để sinh câu trả lời hoặc thực hiện tìm kiếm địa điểm, dịch vụ công, v.v.
+   * Trả về kết quả phù hợp với loại câu hỏi (thông tin địa điểm, tìm kiếm dịch vụ, hoặc trả lời thông thường).
+   * @param contents Nội dung câu hỏi từ người dùng
+   */
+  async main(contents: string) {
+    if (!this.model) {
+      throw new BadRequestException('Gemini not configured');
     }
 
-    async main(contents: string) {
-        if (!this.model) {
-            throw new BadRequestException('Gemini not configured');
-        }
+    const ananlysisPrompt = await this.analyzeQuestion(contents);
+    if (
+      ananlysisPrompt.questionType === 'normal_question' ||
+      ananlysisPrompt.questionType === 'location_info'
+    ) {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        const result = await this.model.generateContent(contents);
+        const response = result.response;
+        return response.candidates;
+      } catch (error) {
+        this.logger.error('Gemini API error:', error);
+        throw new BadRequestException('Generation failed');
+      }
+    } else if (ananlysisPrompt.questionType === 'location_search') {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
-        const ananlysisPrompt = await this.test(contents);
-        if(ananlysisPrompt.questionType === 'normal_question' || ananlysisPrompt.questionType === 'location_info') {
-            try {
-                await new Promise(resolve => setTimeout(resolve, 900));
-                const result = await this.model.generateContent(contents);
-                const response = result.response;
-                return response.candidates;
-            } catch (error) {
-                this.logger.error('Gemini API error:', error);
-                throw new BadRequestException('Generation failed');
-            }
-        } else if(ananlysisPrompt.questionType === 'location_search') {
-            try{
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                const model = this.genAI.getGenerativeModel({
-                    model: "gemini-2.5-flash",
-                    generationConfig: {
-                        temperature: 0.1,
-                        responseMimeType: "application/json",
-                    }
-                });
-                
-                const prompt = `Read and answer location-related questions: "${contents}"
+        const model = this.genAI.getGenerativeModel({
+          model: 'gemini-2.5-flash',
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        });
+
+        const prompt = `Read and answer location-related questions: "${contents}"
                 
                     Return JSON in the format:
                     {
@@ -199,199 +212,221 @@ export class ChatbotService implements OnModuleInit {
 
                     Only return pure JSON, no markdown, no additional text.`;
 
-                const result = await model.generateContent(prompt);
-                const text = result.response.text().trim();
-                
-                this.logger.log(`Location search response: ${text}`);
-                
-                // Parse JSON with error handling
-                let locationData;
-                try {
-                    locationData = JSON.parse(text);
-                } catch (parseError) {
-                    this.logger.warn('Direct JSON parse failed, trying to clean...');
-                    
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
 
-                    let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-                    
+        this.logger.log(`Location search response: ${text}`);
 
-                    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-                    if (!jsonMatch) {
-                        this.logger.error('No JSON found in location response');
-                        throw new BadRequestException('Invalid location response format');
-                    }
-                    
-                    locationData = JSON.parse(jsonMatch[0]);
-                }
+        // Parse JSON với error handling
+        let locationData;
+        try {
+          locationData = JSON.parse(text);
+        } catch (parseError) {
+          this.logger.warn('Direct JSON parse failed, trying to clean...');
 
-                
-                // Validate response structure
-                if (!locationData.locations || !Array.isArray(locationData.locations)) {
-                    this.logger.error('Invalid locations array in response');
-                    throw new BadRequestException('Invalid locations format');
-                }
-                
-                this.logger.log(`Found ${locationData.locations.length} locations`);
-                
-                return {
-                    questionType: 'location_search',
-                    originalQuestion: contents,
-                    ...locationData
-                };
-                
-            } catch(error){
-                this.logger.error('Location search error:', error);
-                throw new BadRequestException('Location search failed: ' + (error.message || 'Unknown error'));
-            }
-        } else if(ananlysisPrompt.questionType === 'public_service_search') {
-            try {
-                // Parse service types from analysis
-                const serviceTypes = ananlysisPrompt.service 
-                    ? ananlysisPrompt.service.split(',').map((s: string) => s.trim().toLowerCase())
-                    : [];
-                
-                const location = ananlysisPrompt.location || '';
-                const scope = ananlysisPrompt.scope || '';
-                
-                // Calculate radius from scope
-                let radiusKm = 5;
-                if (scope) {
-                    const scopeLower = scope.toLowerCase();
-                    
-                    const meterMatch = scopeLower.match(/(\d+)\s*m(?!k)/);
-                    if (meterMatch) {
-                        radiusKm = Math.min(Math.max(parseInt(meterMatch[1]) / 1000, 0.5), 50);
-                    } else {
-                        const kmMatch = scopeLower.match(/(\d+(?:\.\d+)?)\s*km/);
-                        if (kmMatch) {
-                            radiusKm = Math.min(Math.max(parseFloat(kmMatch[1]), 0.5), 50);
-                        } else if (scopeLower.includes('nearest') || scopeLower.includes('nearby') || scopeLower.includes('closest')) {
-                            radiusKm = 2;
-                        } else if (scopeLower.includes('far') || scopeLower.includes('distant')) {
-                            radiusKm = 10;
-                        }
-                    }
-                }
-                
-                this.logger.log(`Searching public services: ${serviceTypes.join(', ')} with radius ${radiusKm}km`);
-                
-                const serviceMapping: { [key: string]: string } = {
-                    'atm': 'atms',
-                    'atms': 'atms',
-                    'hospital': 'hospitals',
-                    'hospitals': 'hospitals',
-                    'school': 'schools',
-                    'schools': 'schools',
-                    'toilet': 'toilets',
-                    'toilets': 'toilets',
-                    'restroom': 'toilets',
-                    'playground': 'playgrounds',
-                    'playgrounds': 'playgrounds',
-                    'bus_stop': 'bus-stops',
-                    'bus-stop': 'bus-stops',
-                    'bus stop': 'bus-stops',
-                    'drinking_water': 'drinking_water',
-                    'drinking water': 'drinking_water',
-                    'water fountain': 'drinking_water'
-                };
-                
-                const amenities: string[] = [];
-                for (const serviceType of serviceTypes) {
-                    const amenity = serviceMapping[serviceType];
-                    if (amenity && !amenities.includes(amenity)) {
-                        amenities.push(amenity);
-                    }
-                }
-                
-                if (amenities.length === 0) {
-                    const originalLower = contents.toLowerCase();
-                    for (const [key, value] of Object.entries(serviceMapping)) {
-                        if (originalLower.includes(key) && !amenities.includes(value)) {
-                            amenities.push(value);
-                        }
-                    }
-                }
-                
-                this.logger.log(`Mapped amenities: ${amenities.join(', ')}, radius: ${radiusKm}km`);
-                
-                let defaultLon = 0; 
-                let defaultLat = 0;
+          let cleaned = text
+            .replace(/```json\s*/g, '')
+            .replace(/```\s*/g, '')
+            .trim();
 
-                if (location && location.trim() !== '') {
-                    try {
-                        
-                        const geoResponse = await fetch(
-                            `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${process.env.OPEN_CAGE_API_KEY}&countrycode=vn&limit=1`,
-                            {
-                                method: 'GET',
-                                headers: { "Content-Type": 'application/json' },
-                            }
-                        );
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) {
+            this.logger.error('No JSON found in location response');
+            throw new BadRequestException('Invalid location response format');
+          }
 
-                        if (!geoResponse.ok) {
-                            this.logger.warn(`Geocoding API failed with status: ${geoResponse.status}`);
-                        } else {
-                            const geoData = await geoResponse.json();
-                            
-                            if (geoData.results && geoData.results.length > 0) {
-                                defaultLon = geoData.results[0].geometry.lng;
-                                defaultLat = geoData.results[0].geometry.lat;
-                                this.logger.log(`Found coordinates: ${defaultLat}, ${defaultLon}`);
-                            } else {
-                                this.logger.warn(`No geocoding results found for: ${location}`);
-                            }
-                        }
-                    } catch (geoError) {
-                        this.logger.error(`Geocoding error: ${geoError.message}`);
-                        this.logger.warn(`Using default coordinates for Hanoi`);
-                    }
-                }
-
-                return {
-                    questionType: 'public_service_search',
-                    originalQuestion: contents,
-                    location: location,
-                    service: serviceTypes.join(', '),
-                    amenities: amenities,
-                    scope: scope,
-                    radiusKm: radiusKm,
-                    searchParams: {
-                        lon: defaultLon,
-                        lat: defaultLat,
-                        radiusKm: radiusKm,
-                        amenities: amenities,
-                        limit: 50
-                    },
-                    message: `Searching for ${amenities.join(', ')} ${location ? `at ${location}` : 'near you'} within ${radiusKm}km radius`
-                };
-                
-            } catch (error) {
-                this.logger.error('Public service search error:', error);
-                throw new BadRequestException('Public service search failed: ' + (error.message || 'Unknown error'));
-            }
+          locationData = JSON.parse(jsonMatch[0]);
         }
+
+        // Validate response structure
+        if (!locationData.locations || !Array.isArray(locationData.locations)) {
+          this.logger.error('Invalid locations array in response');
+          throw new BadRequestException('Invalid locations format');
+        }
+
+        this.logger.log(`Found ${locationData.locations.length} locations`);
+
+        return {
+          questionType: 'location_search',
+          originalQuestion: contents,
+          ...locationData,
+        };
+      } catch (error) {
+        this.logger.error('Location search error:', error);
+        throw new BadRequestException(
+          'Location search failed: ' + (error.message || 'Unknown error'),
+        );
+      }
+    } else if (ananlysisPrompt.questionType === 'public_service_search') {
+      try {
+        // Parse service types từ analysis
+        const serviceTypes = ananlysisPrompt.service
+          ? ananlysisPrompt.service
+              .split(',')
+              .map((s: string) => s.trim().toLowerCase())
+          : [];
+
+        const location = ananlysisPrompt.location || '';
+        const scope = ananlysisPrompt.scope || '';
+
+        // Tính toán radius từ scope
+        let radiusKm = 5;
+        if (scope) {
+          const scopeLower = scope.toLowerCase();
+
+          const meterMatch = scopeLower.match(/(\d+)\s*m(?!k)/);
+          if (meterMatch) {
+            radiusKm = Math.min(
+              Math.max(parseInt(meterMatch[1]) / 1000, 0.5),
+              50,
+            );
+          } else {
+            const kmMatch = scopeLower.match(/(\d+(?:\.\d+)?)\s*km/);
+            if (kmMatch) {
+              radiusKm = Math.min(Math.max(parseFloat(kmMatch[1]), 0.5), 50);
+            } else if (
+              scopeLower.includes('gần nhất') ||
+              scopeLower.includes('gần đây')
+            ) {
+              radiusKm = 2;
+            } else if (scopeLower.includes('xa')) {
+              radiusKm = 10;
+            }
+          }
+        }
+
+        this.logger.log(
+          `Searching public services: ${serviceTypes.join(', ')} with radius ${radiusKm}km`,
+        );
+
+        const serviceMapping: { [key: string]: string } = {
+          atm: 'atms',
+          'bệnh viện': 'hospitals',
+          hospital: 'hospitals',
+          'trường học': 'schools',
+          school: 'schools',
+          'nhà vệ sinh': 'toilets',
+          toilet: 'toilets',
+          toilets: 'toilets',
+          'sân chơi': 'playgrounds',
+          playground: 'playgrounds',
+          'trạm xe buýt': 'bus-stops',
+          bus_stop: 'bus-stops',
+          'nước uống': 'drinking_water',
+          drinking_water: 'drinking_water',
+        };
+
+        const amenities: string[] = [];
+        for (const serviceType of serviceTypes) {
+          const amenity = serviceMapping[serviceType];
+          if (amenity && !amenities.includes(amenity)) {
+            amenities.push(amenity);
+          }
+        }
+
+        if (amenities.length === 0) {
+          const originalLower = contents.toLowerCase();
+          for (const [key, value] of Object.entries(serviceMapping)) {
+            if (originalLower.includes(key) && !amenities.includes(value)) {
+              amenities.push(value);
+            }
+          }
+        }
+
+        this.logger.log(
+          `Mapped amenities: ${amenities.join(', ')}, radius: ${radiusKm}km`,
+        );
+
+        let defaultLon = 0;
+        let defaultLat = 0;
+
+        if (location && location.trim() !== '') {
+          try {
+            const geoResponse = await fetch(
+              `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${process.env.OPEN_CAGE_API_KEY}&countrycode=vn&limit=1`,
+              {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+              },
+            );
+
+            if (!geoResponse.ok) {
+              this.logger.warn(
+                `Geocoding API failed with status: ${geoResponse.status}`,
+              );
+            } else {
+              const geoData = await geoResponse.json();
+
+              if (geoData.results && geoData.results.length > 0) {
+                defaultLon = geoData.results[0].geometry.lng;
+                defaultLat = geoData.results[0].geometry.lat;
+                this.logger.log(
+                  `Found coordinates: ${defaultLat}, ${defaultLon}`,
+                );
+              } else {
+                this.logger.warn(`No geocoding results found for: ${location}`);
+              }
+            }
+          } catch (geoError) {
+            this.logger.error(`Geocoding error: ${geoError.message}`);
+            this.logger.warn(`Using default coordinates for Hanoi`);
+          }
+        }
+
+        return {
+          questionType: 'public_service_search',
+          originalQuestion: contents,
+          location: location,
+          service: serviceTypes.join(', '),
+          amenities: amenities,
+          scope: scope,
+          radiusKm: radiusKm,
+          searchParams: {
+            lon: defaultLon,
+            lat: defaultLat,
+            radiusKm: radiusKm,
+            amenities: amenities,
+            limit: 50,
+          },
+          message: `Tìm kiếm ${amenities.join(', ')} ${location ? `tại ${location}` : 'gần bạn'} trong bán kính ${radiusKm}km`,
+        };
+      } catch (error) {
+        this.logger.error('Public service search error:', error);
+        throw new BadRequestException(
+          'Public service search failed: ' + (error.message || 'Unknown error'),
+        );
+      }
+    }
+  }
+
+  /**
+   * Phân tích câu hỏi để xác định loại truy vấn (tìm kiếm địa điểm, dịch vụ công, thông tin địa điểm, câu hỏi thường, v.v.).
+   * Sử dụng Gemini AI để phân tích hoặc fallback sang phân tích thủ công nếu gặp lỗi.
+   * Trả về object chứa loại câu hỏi và thông tin liên quan.
+   * @param contents Nội dung câu hỏi từ người dùng
+   */
+  async analyzeQuestion(contents: string) {
+    if (!this.genAI) {
+      throw new BadRequestException('Gemini not configured');
     }
 
-    async test(contents: string) {
-        if (!this.genAI) {
-            throw new BadRequestException('Gemini not configured');
-        }
+    // Validate input
+    if (!contents || typeof contents !== 'string' || contents.trim() === '') {
+      throw new BadRequestException(
+        'Invalid input: contents must be a non-empty string',
+      );
+    }
 
-        // Validate input
-        if (!contents || typeof contents !== 'string' || contents.trim() === '') {
-            throw new BadRequestException('Invalid input: contents must be a non-empty string');
-        }
+    try {
+      const model = this.genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+        },
+      });
 
-        try {
-            const model = this.genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
-                generationConfig: {
-                    temperature: 0.1,
-                    responseMimeType: "application/json",
-                }
-            });
-
-            const prompt = `Analysis question and return the question type.
+      const prompt = `Analysis question and return the question type.
 
     Question: "${contents}"
 
@@ -427,114 +462,125 @@ export class ChatbotService implements OnModuleInit {
 
     Return only JSON, no additional text.`;
 
-            this.logger.log(`Analyzing question type...`);
-            
-            const result = await model.generateContent(prompt);
-            
-            if (!result || !result.response) {
-                this.logger.error('Empty response from Gemini');
-                throw new BadRequestException('Empty response from API');
-            }
+      this.logger.log(`Analyzing question type...`);
 
-            const text = result.response.text().trim();
-            
-            this.logger.log(`Raw response: ${text}`);
+      const result = await model.generateContent(prompt);
 
-            if (!text || text.length === 0) {
-                this.logger.error('Empty text response');
-                throw new BadRequestException('Empty response text');
-            }
+      if (!result || !result.response) {
+        this.logger.error('Empty response from Gemini');
+        throw new BadRequestException('Empty response from API');
+      }
 
-            // Parse JSON
-            let analysis;
-            try {
-                analysis = JSON.parse(text);
-            } catch (parseError) {
-                this.logger.warn('Direct JSON parse failed, trying to extract...');
-                
-                let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-                
-                const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-                if (!jsonMatch) {
-                    this.logger.error('No JSON found in response');
-                    throw new BadRequestException('Invalid response format: no JSON found');
-                }
-                
-                analysis = JSON.parse(jsonMatch[0]);
-            }
-            
-            // Validate and set defaults
-            if (!analysis.questionType) {
-                analysis.questionType = 'unknown';
-            }
+      const text = result.response.text().trim();
 
-            if (!analysis.originalQuestion) {
-                analysis.originalQuestion = contents;
-            }
+      this.logger.log(`Raw response: ${text}`);
 
-            this.logger.log(`Analysis result: ${JSON.stringify(analysis)}`);
-            
-            return analysis;
+      if (!text || text.length === 0) {
+        this.logger.error('Empty text response');
+        throw new BadRequestException('Empty response text');
+      }
 
-        } catch (error) {
-            this.logger.error('Gemini API error:', error);
-            
-            if (error instanceof BadRequestException) {
-                throw error;
-            }
-            
-            // Fallback response
-            const lowerContent = contents.toLowerCase();
-            const publicServiceKeywords = ['hospital', 'school', 'toilet', 'playground', 'bus stop', 'drinking water', 'atm', 'bank', 'pharmacy', 'police station'];
-            const locationInfoKeywords = ['introduce', 'history', 'information', 'what is', 'special', 'famous', 'tell me about', 'describe', 'explain'];
-            
-            let questionType = 'unknown';
-            
-            if (locationInfoKeywords.some(keyword => lowerContent.includes(keyword))) {
-                questionType = 'location_info';
-            } else if (publicServiceKeywords.some(keyword => lowerContent.includes(keyword))) {
-                questionType = 'public_service_search';
-            } else if (lowerContent.includes('find') || lowerContent.includes('where') || lowerContent.includes('near') || lowerContent.includes('search') || lowerContent.includes('locate') || lowerContent.includes('show me')) {
-                questionType = 'location_search';
-            } else {
-                questionType = 'normal_question';
-            }
-            
-            return {
-                questionType,
-                originalQuestion: contents
-            };
+      let analysis;
+      try {
+        analysis = JSON.parse(text);
+      } catch (parseError) {
+        this.logger.warn('Direct JSON parse failed, trying to extract...');
+
+        const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          this.logger.error('No JSON found in response');
+          throw new BadRequestException(
+            'Invalid response format: no JSON found',
+          );
         }
+
+        analysis = JSON.parse(jsonMatch[0]);
+      }
+
+      if (!analysis.questionType) {
+        analysis.questionType = 'unknown';
+      }
+
+      if (!analysis.originalQuestion) {
+        analysis.originalQuestion = contents;
+      }
+
+      this.logger.log(`Analysis result: ${JSON.stringify(analysis)}`);
+
+      return analysis;
+    } catch (error) {
+      this.logger.error('Gemini API error:', error);
+
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      const lowerContent = contents.toLowerCase();
+      const publicServiceKeywords = [
+        'bệnh viện',
+        'trường học',
+        'nhà vệ sinh',
+        'sân chơi',
+        'trạm xe buýt',
+        'nước uống',
+      ];
+      const locationInfoKeywords = [
+        'giới thiệu',
+        'lịch sử',
+        'thông tin',
+        'có gì',
+        'đặc biệt',
+        'nổi tiếng',
+      ];
+
+      let questionType = 'unknown';
+
+      if (
+        locationInfoKeywords.some((keyword) => lowerContent.includes(keyword))
+      ) {
+        questionType = 'location_info';
+      } else if (
+        publicServiceKeywords.some((keyword) => lowerContent.includes(keyword))
+      ) {
+        questionType = 'public_service_search';
+      } else if (
+        lowerContent.includes('tìm') ||
+        lowerContent.includes('ở đâu') ||
+        lowerContent.includes('gần')
+      ) {
+        questionType = 'location_search';
+      } else {
+        questionType = 'normal_question';
+      }
+
+      return {
+        questionType,
+        originalQuestion: contents,
+      };
+    }
+  }
+
+  /**
+   * Thực hiện workflow gọi hàm chức năng (function calling) của Gemini AI.
+   * AI có thể yêu cầu gọi các tool (đã đăng ký qua ChatToolsRegistry) để lấy dữ liệu thực tế (ví dụ: tìm kiếm địa điểm, lấy tọa độ, v.v.).
+   * Quản lý vòng lặp gọi hàm và trả kết quả về cho AI, cho phép AI kết hợp dữ liệu thực tế vào câu trả lời.
+   * @param contents Nội dung hội thoại đầu vào
+   */
+  async ChatFunctionCalling(contents: string) {
+    if (!contents || typeof contents !== 'string') {
+      throw new BadRequestException(
+        'Invalid input: contents must be a non-empty string',
+      );
     }
 
+    const toolsDefinition = this.chatToolsRegistry.toolsSchema;
 
-    async ChatFunctionCalling(contents: string, context?: { currentLocation?: { lat: number; lon: number } }) {
-        if(!contents || typeof contents !== 'string'){
-            throw new BadRequestException('Invalid input: contents must be a non-empty string');
-        }
-
-        const toolsDefinition = this.chatToolsRegistry.toolsSchema; 
-
-        // Detect if user wants to use current location
-        const nearMeKeywords = [
-            'near me', 'nearby', 'around me', 'close to me', 'my location', 'where i am',
-            'around here', 'in this area', 'close by', 'in my vicinity'
-        ];
-        const lowerContents = contents.toLowerCase();
-        const wantsCurrentLocation = nearMeKeywords.some(keyword => lowerContents.includes(keyword));
-        
-        // Build context string for the AI
-        let contextInfo = '';
-        if (wantsCurrentLocation && context?.currentLocation) {
-            contextInfo = `\n\nCONTEXT: User wants to search near their current location. Current coordinates: lat=${context.currentLocation.lat}, lon=${context.currentLocation.lon}. Use these coordinates directly for searchNearby or searchNearbyWithTopology.`;
-        } else if (wantsCurrentLocation && !context?.currentLocation) {
-            contextInfo = `\n\nCONTEXT: User wants to search near their current location but no coordinates provided. Ask user to enable location services or specify a location name.`;
-        }
-
-        try{
-            const model = this.genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
-                systemInstruction: `You are an intelligent, friendly, and flexible virtual assistant. **ALWAY RESPONSE ENGLISH**
+    try {
+      const model = this.genAI.getGenerativeModel({
+        model: 'gemini-2.5-pro',
+        systemInstruction: `You are an intelligent, friendly, and flexible virtual assistant. **ALWAY RESPONSE ENGLISH**
                                     CORE RULES FOR USING TOOLS:
                                     1. **When to use location search Tool:** 
                                         - When user searches for services/places (ATM, restaurants, hospitals, etc.)
@@ -563,106 +609,107 @@ export class ChatbotService implements OnModuleInit {
                                     - "Find ATMs in Hanoi" → fetchGeocodeByName("Hanoi") → searchNearby
                                     - "Find cafes" (no location) → Respond: "Where would you like to search? Or say 'near me' to use your current location."
                                     
-                                    RESPONSE STYLE:
-                                    - Respond in the language of the question (Vietnamese for Vietnamese questions, English for English questions).
-                                    - Natural, helpful tone, like a real travel guide.
-                                    - If tool returns error or no results, apologize and try to provide relevant suggestions from your knowledge.`,
-                generationConfig: {
-                    temperature: 0.3,
-                },
-                tools: [
-                    { functionDeclarations: toolsDefinition }
-                ]
-            });
+                                    PHONG CÁCH TRẢ LỜI:
+                                    - Trả lời theo ngôn ngữ của câu hỏi (Tiếng Việt cho câu hỏi tiếng Việt, English cho câu hỏi tiếng Anh).
+                                    - Giọng văn tự nhiên, hữu ích, như một hướng dẫn viên du lịch thực thụ.
+                                    - Nếu tool trả về lỗi hoặc không tìm thấy, hãy xin lỗi và cố gắng đưa ra thông tin gợi ý liên quan từ kiến thức của bạn.`,
+        generationConfig: {
+          temperature: 0.3,
+        },
+        tools: [{ functionDeclarations: toolsDefinition }],
+      });
 
-            const chat = model.startChat();
-            // Include context info in the message if available
-            const messageWithContext = contents + contextInfo;
-            let result = await chat.sendMessage(messageWithContext);
-            let response = result.response;
-            let functionCalls = response.functionCalls();
-            let functionResult : any[] = [];
+      const chat = model.startChat();
+      let result = await chat.sendMessage(contents);
+      let response = result.response;
+      let functionCalls = response.functionCalls();
+      let functionResult: any[] = [];
 
-            while(functionCalls && functionCalls.length > 0){
-                const call = functionCalls[0];
-                this.logger.log(`Function call requested: ${JSON.stringify(call)}`);
+      while (functionCalls && functionCalls.length > 0) {
+        const call = functionCalls[0];
+        this.logger.log(`Function call requested: ${JSON.stringify(call)}`);
 
-                const { name, args } = call;
+        const { name, args } = call;
 
-                let toolResult;
-                try {
-                    toolResult = await this.chatToolsRegistry.executeTool(name, args);
-                } catch (e) {
-                    toolResult = { error: e.message };
-                }
-
-
-                if (toolResult === undefined || toolResult === null) {
-                    toolResult = { result: 'Success' }; 
-                } else if (Array.isArray(toolResult)) {
-                    toolResult = { search_results: toolResult };
-                 } else if (typeof toolResult !== 'object') {
-                    toolResult = { result: toolResult };
-                }
-
-                functionResult.push({
-                    functionName: name,
-                    arguments: args,
-                    result: toolResult
-                });
-
-                result = await chat.sendMessage([{
-                    functionResponse: {
-                        name: name,
-                        response: toolResult
-                    }
-                }]);
-
-                response = result.response;
-                functionCalls = response.functionCalls();
-            }
-
-            return {
-                finalResponse: response.text(),
-                functionCalls: functionResult
-            }
-            
-        }catch(error){
-            this.logger.error('Function calling error:', error);
-            throw new BadRequestException('Function calling failed: ' + (error.message || 'Unknown error'));
+        let toolResult;
+        try {
+          toolResult = await this.chatToolsRegistry.executeTool(name, args);
+        } catch (e) {
+          toolResult = { error: e.message };
         }
-    }
 
-    @ChatTool({
-        name: 'fetchGeocodeByName',
-        description: 'Fetches geocode (latitude and longitude) for a given location name using OpenCage Geocoding API. Only use this tool when you need to get coordinates for a location that cannot be found via Wikidata.',
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                name: { type: SchemaType.STRING }
+        if (toolResult === undefined || toolResult === null) {
+          toolResult = { result: 'Success' };
+        } else if (Array.isArray(toolResult)) {
+          toolResult = { search_results: toolResult };
+        } else if (typeof toolResult !== 'object') {
+          toolResult = { result: toolResult };
+        }
+
+        functionResult.push({
+          functionName: name,
+          arguments: args,
+          result: toolResult,
+        });
+
+        result = await chat.sendMessage([
+          {
+            functionResponse: {
+              name: name,
+              response: toolResult,
             },
-            required: ['name']
-        }
-    })
-    private async fetchGeocodeByName({ name }: { name: string }){
-        const geoResponse = await fetch(
-            `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(name)}&key=${process.env.OPEN_CAGE_API_KEY}&countrycode=vn&limit=1`,
-            {
-                method: 'GET',
-                headers: { "Content-Type": 'application/json' },
-            }
-        );
+          },
+        ]);
 
-        if (!geoResponse.ok) {
-            this.logger.warn(`Geocoding API failed with status: ${geoResponse.status}`);
-        } else {
-            const geoData = await geoResponse.json();
-            
-            if (geoData.results && geoData.results.length > 0) {
-                return geoData.results[0].geometry;
-            } else {
-                this.logger.warn(`No geocoding results found for: ${name}`);
-            }
-        }
+        response = result.response;
+        functionCalls = response.functionCalls();
+      }
+
+      return {
+        finalResponse: response.text(),
+        functionCalls: functionResult,
+      };
+    } catch (error) {
+      this.logger.error('Function calling error:', error);
+      throw new BadRequestException(
+        'Function calling failed: ' + (error.message || 'Unknown error'),
+      );
     }
+  }
+
+  @ChatTool({
+    name: 'fetchGeocodeByName',
+    description:
+      'Fetches geocode (latitude and longitude) for a given location name using OpenCage Geocoding API. Only use this tool when you need to get coordinates for a location that cannot be found via Wikidata.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        name: { type: SchemaType.STRING },
+      },
+      required: ['name'],
+    },
+  })
+  private async fetchGeocodeByName({ name }: { name: string }) {
+    const geoResponse = await fetch(
+      `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(name)}&key=${process.env.OPEN_CAGE_API_KEY}&countrycode=vn&limit=1`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+
+    if (!geoResponse.ok) {
+      this.logger.warn(
+        `Geocoding API failed with status: ${geoResponse.status}`,
+      );
+    } else {
+      const geoData = await geoResponse.json();
+
+      if (geoData.results && geoData.results.length > 0) {
+        return geoData.results[0].geometry;
+      } else {
+        this.logger.warn(`No geocoding results found for: ${name}`);
+      }
+    }
+  }
 }
