@@ -63,21 +63,22 @@ import { CrowdsourceModule } from './crowdsource/crowdsource.module';
       envFilePath: ['.env.development', '.env'],
       isGlobal: true,
     }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'mysql',
-        host: configService.get('DB_HOST', 'localhost'),
-        port: configService.get('DB_PORT', 3306),
-        username: configService.get('DB_USERNAME', 'root'),
-        password: configService.get('DB_PASSWORD', ''),
-        database: configService.get('DB_DATABASE', 'opendatafithou'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: false, // Tắt auto-sync để tránh conflict với data cũ
-        logging: configService.get('NODE_ENV') === 'development',
-      }),
-    }),
+    // TEMPORARY: TypeORM bị tắt do vấn đề database
+    // TypeOrmModule.forRootAsync({
+    //   imports: [ConfigModule],
+    //   inject: [ConfigService],
+    //   useFactory: (configService: ConfigService) => ({
+    //     type: 'mysql',
+    //     host: configService.get('DB_HOST', 'localhost'),
+    //     port: configService.get('DB_PORT', 3306),
+    //     username: configService.get('DB_USERNAME', 'root'),
+    //     password: configService.get('DB_PASSWORD', ''),
+    //     database: configService.get('DB_DATABASE', 'opendatafithou'),
+    //     entities: [__dirname + '/**/*.entity{.ts,.js}'],
+    //     synchronize: false, // Tắt auto-sync để tránh conflict với data cũ
+    //     logging: configService.get('NODE_ENV') === 'development',
+    //   }),
+    // }),
     ScheduleModule.forRoot(),
     UsersModule,
     FusekiModule,
@@ -86,7 +87,8 @@ import { CrowdsourceModule } from './crowdsource/crowdsource.module';
     OverpassModule,
     AdminModule,
     InfluxDBModule,
-    CrowdsourceModule,
+    // TEMPORARY: CrowdsourceModule bị tắt do yêu cầu TypeORM/Database
+    // CrowdsourceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
