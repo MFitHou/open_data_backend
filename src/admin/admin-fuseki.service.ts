@@ -18,14 +18,22 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
 /**
- * AdminFusekiService - Service riêng để xử lý SPARQL queries cho Admin module
- * Tách biệt khỏi FusekiService chính để quản lý độc lập
+ * Service xử lý SPARQL queries riêng cho Admin module
+ * 
+ * Nhiệm vụ:
+ * - Thực thi SPARQL SELECT queries để truy vấn dữ liệu từ Apache Jena Fuseki
+ * - Thực thi SPARQL UPDATE queries để thêm/sửa/xóa dữ liệu RDF
+ * - Quản lý xác thực với Fuseki server (Basic Auth)
+ * - Liệt kê và kiểm tra các Named Graph trong dataset
+ * 
+ * Tách biệt khỏi FusekiService chính để:
+ * - Quản lý riêng logic admin (thêm/sửa/xóa POI)
+ * - Tránh conflict với queries của user thường
  */
 @Injectable()
 export class AdminFusekiService implements OnModuleInit {
   private readonly logger = new Logger(AdminFusekiService.name);
 
-  // Đọc từ .env
   private readonly queryEndpoint =
     process.env.FUSEKI_QUERY_ENDPOINT ||
     `${process.env.FUSEKI_BASE_URL}/${process.env.FUSEKI_DATASET}/sparql`;
@@ -34,6 +42,10 @@ export class AdminFusekiService implements OnModuleInit {
     process.env.FUSEKI_UPDATE_ENDPOINT ||
     `${process.env.FUSEKI_BASE_URL}/${process.env.FUSEKI_DATASET}/update`;
 
+  /**
+   * Khởi tạo service khi NestJS module được load.
+   * Kiểm tra kết nối với Fuseki và log danh sách các Named Graph có sẵn.
+   */
   async onModuleInit() {
     try {
       this.logger.log('Admin Fuseki query endpoint: ' + this.queryEndpoint);
@@ -41,7 +53,6 @@ export class AdminFusekiService implements OnModuleInit {
         this.logger.error('Missing FUSEKI_QUERY_ENDPOINT');
         return;
       }
-      // Check graph list (log only, don't block)
       await this.listGraphs();
     } catch (e: any) {
       this.logger.warn('Init admin fuseki skip: ' + e.message);
@@ -49,7 +60,12 @@ export class AdminFusekiService implements OnModuleInit {
   }
 
   /**
-   * Liệt kê tất cả các graph trong dataset
+   * Liệt kê tất cả các Named Graph trong Fuseki dataset.
+   * 
+   * Named Graph là nơi lưu trữ dữ liệu RDF theo từng loại POI.
+   * Ví dụ: http://localhost:3030/graph/atm, http://localhost:3030/graph/hospital
+   * 
+   * @returns Mảng các object chứa URI của graph và số lượng triple trong đó
    */
   async listGraphs() {
     const q = `
@@ -74,9 +90,19 @@ export class AdminFusekiService implements OnModuleInit {
   }
 
   /**
-   * Thực thi SPARQL SELECT query
-   * @param query - SPARQL SELECT query string
-   * @returns Array of result objects
+   * Thực thi SPARQL SELECT query để truy vấn dữ liệu
+   * 
+   * SELECT query dùng để đọc dữ liệu từ RDF triplestore
+   * Ví dụ: lấy danh sách POI, tìm kiếm theo tọa độ, lọc theo điều kiện
+   * 
+   * Tự động xử lý:
+   * - Encode query parameters
+   * - Thêm Authorization header nếu Fuseki yêu cầu
+   * - Parse JSON response thành array of objects đơn giản
+   * 
+   * @param query SPARQL SELECT query string (bắt đầu bằng PREFIX và SELECT)
+   * @returns Mảng các object, mỗi object là 1 kết quả trả về
+   * @throws Error nếu query syntax sai hoặc Fuseki server lỗi
    */
   async runSelect(query: string): Promise<any[]> {
     if (!this.queryEndpoint) {
@@ -85,11 +111,8 @@ export class AdminFusekiService implements OnModuleInit {
     const url = this.queryEndpoint + '?query=' + encodeURIComponent(query);
     this.logger.debug('SPARQL GET: ' + url.substring(0, 200));
 
-    // Fuseki yêu cầu xác thực,
-    // nếu không đặt user/pass trên fuseki thì comment phần này
-    const headers: Record<string, string> = {
-      Accept: 'application/sparql-results+json',
-    };
+    // Nếu Fuseki không yêu cầu xác thực thì comment phần này.
+    const headers: Record<string, string> = { Accept: 'application/sparql-results+json' };
     if (process.env.FUSEKI_USER && process.env.FUSEKI_PASS) {
       const basic = Buffer.from(
         `${process.env.FUSEKI_USER}:${process.env.FUSEKI_PASS}`,
@@ -116,17 +139,31 @@ export class AdminFusekiService implements OnModuleInit {
   }
 
   /**
-   * Alias cho runSelect để tương thích với code sử dụng executeSelect
-   * @param query - SPARQL SELECT query string
-   * @returns Array of result objects
+   * Alias method để tương thích với code sử dụng executeSelect
+   * Thực chất gọi runSelect() bên trong
+   * 
+   * @param query SPARQL SELECT query string
+   * @returns Mảng các object kết quả
    */
   async executeSelect(query: string): Promise<any[]> {
     return this.runSelect(query);
   }
 
   /**
-   * Thực thi SPARQL UPDATE query (INSERT, DELETE, etc.)
-   * @param updateQuery - SPARQL UPDATE query string
+   * Thực thi SPARQL UPDATE query để cập nhật dữ liệu.
+   * 
+   * UPDATE query dùng để:
+   * - INSERT DATA: Thêm triple mới vào graph.
+   * - DELETE DATA: Xóa triple khỏi graph.
+   * - DELETE/INSERT WHERE: Sửa dữ liệu dựa trên điều kiện.
+   * 
+   * Lưu ý: 
+   * - Phải chỉ định Named Graph trong query (GRAPH <uri> { ... }).
+   * - Cần quyền ghi trên Fuseki server.
+   * - Thay đổi sẽ permanent, không có transaction rollback.
+   * 
+   * @param updateQuery SPARQL UPDATE query string (INSERT/DELETE/DELETE-INSERT)
+   * @throws Error nếu query syntax sai, không có quyền, hoặc server lỗi
    */
   async update(updateQuery: string): Promise<void> {
     if (!this.updateEndpoint) {

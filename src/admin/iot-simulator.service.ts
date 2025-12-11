@@ -21,9 +21,29 @@ import { FusekiService } from '../fuseki/fuseki.service';
 import { randomUUID } from 'crypto';
 
 /**
- * IoT Simulator Service
- * Tạo dữ liệu cảm biến giả lập cho Smart City Dashboard
- * Sử dụng SOSA/SSN Ontology theo quy định cuộc thi
+ * DEPRECATED: Service giả lập dữ liệu cảm biến IoT cho Smart City
+ * 
+ * Trạng thái: ĐÃ VÔ HIỆU HÓA (các @Cron decorators đã bị comment)
+ * 
+ * Mục đích ban đầu:
+ * - Tạo dữ liệu cảm biến giả lập realtime cho demo Smart City Dashboard
+ * - Sử dụng SOSA/SSN Ontology (Semantic Sensor Network) chuẩn W3C
+ * - Lưu trữ vào Apache Jena Fuseki dưới dạng RDF triples
+ * 
+ * Các loại cảm biến được giả lập:
+ * 1. Traffic Cameras: Đo mật độ giao thông (vehicles/minute)
+ * 2. Flood Sensors: Đo mức nước tại các điểm ngập úng (cm)
+ * 
+ * Lý do ngừng sử dụng:
+ * - IoT simulation không phù hợp với kiến trúc Linked Open Data hiện tại
+ * - Dữ liệu giả lập không có giá trị thực tế cho production
+ * - Tăng độ phức tạp không cần thiết cho hệ thống POI management
+ * 
+ * Named Graphs được sử dụng:
+ * - http://opendatafithou.org/graph/iot-traffic: Dữ liệu giao thông
+ * - http://opendatafithou.org/graph/iot-flood: Dữ liệu ngập lụt
+ * 
+ * @deprecated Sẽ bị xóa hoàn toàn trong phiên bản tương lai
  */
 @Injectable()
 export class IotSimulatorService {

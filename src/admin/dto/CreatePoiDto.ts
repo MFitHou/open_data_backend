@@ -15,22 +15,32 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+/**
+ * DTO (Data Transfer Object) để tạo điểm quan tâm (POI - Point of Interest) mới
+ * - Dùng khi admin muốn thêm địa điểm vào hệ thống (ATM, nhà vệ sinh,...)
+ */
 export class CreatePoiDto {
   name: string;
-  type: string; // atm, hospital, toilet, bus-stop
+  type: string;
   lat: number;
   lon: number;
   address?: string;
 }
 
+/**
+ * DTO chứa thống kê tổng quan cho Admin Dashboard
+ * - totalPois: Tổng số tất cả các POI trong hệ thống
+ * - graphCount: Số lượng loại POI khác nhau (atm, school, v.v.)
+ * - breakdown: Object chứa số lượng POI cho từng loại (key: tên loại, value: số lượng)
+ *   Ví dụ: { "atm": 150, "hospital": 45, "cafe": 200, "school": 80, ... }
+ * - topCategories: Mảng chứa top 5 loại POI có nhiều địa điểm nhất
+ */
 export class StatsResponseDto {
   totalPois: number;
-  monitoringPoints: number;
-  totalReports: number;
-  breakdown: {
-    atms: number;
-    hospitals: number;
-    toilets: number;
-    busStops: number;
-  };
+  graphCount: number;
+  breakdown: Record<string, number>;
+  topCategories: Array<{
+    type: string;
+    count: number;
+  }>;
 }

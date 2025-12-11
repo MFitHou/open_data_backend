@@ -30,7 +30,7 @@ import {
   ValidationPipe,
   UseGuards,
 } from '@nestjs/common';
-import { UsersService } from './users.service';
+import { UsersService, User } from './users.service';
 import {
   RegisterDto,
   LoginDto,

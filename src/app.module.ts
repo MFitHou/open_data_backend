@@ -30,28 +30,56 @@ import { InfluxDBModule } from './influxdb/influxdb.module';
 import { UsersModule } from './users/users.module';
 import { NgsiLdModule } from './ngsi-ld/ngsi-ld.module';
 
+/**
+ * AppModule - Root module của ứng dụng OpenDataFitHou Backend
+ * 
+ * Module chính khởi tạo và quản lý toàn bộ application:
+ * 
+ * Configuration:
+ * - ConfigModule: Load environment variables từ .env files
+ * - TypeOrmModule: Kết nối MySQL database cho user management
+ * - ScheduleModule: Hỗ trợ cron jobs và scheduled tasks
+ * 
+ * Database Configuration:
+ * - Type: MySQL
+ * - Auto-synchronize: Chỉ trong development (tự động tạo/cập nhật schema)
+ * - Logging: Bật SQL logging trong development mode
+ * - Entity Auto-discovery: Tự động scan và load tất cả *.entity.ts files
+ * 
+ * Feature Modules:
+ * 1. UsersModule: Quản lý authentication và users
+ * 2. FusekiModule: Tương tác với Apache Jena Fuseki (RDF triplestore)
+ * 3. ChatbotModule: Chatbot AI với SPARQL query generation
+ * 4. WikidataModule: Fetch dữ liệu từ Wikidata SPARQL endpoint
+ * 5. OverpassModule: Query OpenStreetMap qua Overpass API
+ * 6. AdminModule: Admin dashboard để quản lý POI data
+ * 7. InfluxDBModule: Time-series data storage cho IoT sensors
+ * 8. CrowdsourceModule: Crowdsourced POI updates với consensus mechanism
+ * 
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({
       envFilePath: ['.env.development', '.env'],
       isGlobal: true,
     }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'mysql',
-        host: configService.get('DB_HOST', 'localhost'),
-        port: configService.get('DB_PORT', 3306),
-        username: configService.get('DB_USERNAME', 'root'),
-        password: configService.get('DB_PASSWORD', ''),
-        database: configService.get('DB_DATABASE', 'opendatafithou'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') !== 'production', // Auto-sync trong dev
-        logging: configService.get('NODE_ENV') === 'development',
-      }),
-    }),
-    ScheduleModule.forRoot(), // Enable cron jobs
+    // TEMPORARY: TypeORM bị tắt do vấn đề database
+    // TypeOrmModule.forRootAsync({
+    //   imports: [ConfigModule],
+    //   inject: [ConfigService],
+    //   useFactory: (configService: ConfigService) => ({
+    //     type: 'mysql',
+    //     host: configService.get('DB_HOST', 'localhost'),
+    //     port: configService.get('DB_PORT', 3306),
+    //     username: configService.get('DB_USERNAME', 'root'),
+    //     password: configService.get('DB_PASSWORD', ''),
+    //     database: configService.get('DB_DATABASE', 'opendatafithou'),
+    //     entities: [__dirname + '/**/*.entity{.ts,.js}'],
+    //     synchronize: false, // Tắt auto-sync để tránh conflict với data cũ
+    //     logging: configService.get('NODE_ENV') === 'development',
+    //   }),
+    // }),
+    ScheduleModule.forRoot(),
     UsersModule,
     FusekiModule,
     ChatbotModule,
@@ -59,6 +87,8 @@ import { NgsiLdModule } from './ngsi-ld/ngsi-ld.module';
     OverpassModule,
     AdminModule,
     InfluxDBModule,
+    // TEMPORARY: CrowdsourceModule bị tắt do yêu cầu TypeORM/Database
+    // CrowdsourceModule,
     NgsiLdModule,
   ],
   controllers: [AppController],

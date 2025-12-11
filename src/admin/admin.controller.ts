@@ -20,14 +20,39 @@ import { AdminService } from './admin.service';
 import { CreatePoiDto } from './dto/CreatePoiDto';
 import { AdminGuard } from '../users/guards';
 
+/**
+ * Controller xử lý các API endpoints cho Admin Dashboard
+ * 
+ * Bảo mật:
+ * - Tất cả endpoints yêu cầu xác thực admin qua AdminGuard.
+ * - Chỉ user có role 'admin' mới truy cập được.
+ * 
+ * Chức năng chính:
+ * - Quản lý POI (Point of Interest): tạo, xem.
+ * - Thống kê dashboard: tổng số POI, phân loại theo type.
+ * - Lấy schema/cấu trúc của từng loại POI.
+ * - Health check cho monitoring.
+ * 
+ * Base URL: /admin
+ */
 @Controller('admin')
 @UseGuards(AdminGuard) 
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   /**
-   * GET /admin/stats
-   * Lấy thống kê tổng quan cho dashboard
+   * Lấy thống kê tổng quan cho Admin Dashboard
+   * 
+   * Endpoint: GET /admin/stats
+   * Auth: Yêu cầu Admin role
+   * 
+   * Response bao gồm:
+   * - totalPois: Tổng số địa điểm trong hệ thống
+   * - graphCount: Số loại POI khác nhau
+   * - breakdown: Object {type: count} cho từng loại
+   * - topCategories: Top 5 loại POI có nhiều địa điểm nhất
+   * 
+   * @returns Object chứa success flag và data thống kê
    */
   @Get('stats')
   async getDashboardStats() {
@@ -50,9 +75,18 @@ export class AdminController {
   }
 
   /**
-   * GET /admin/pois/schema
-   * Lấy schema (cấu trúc thuộc tính) của một loại POI
-   * Query params: type (school, bus-stop, play-ground, drinking-water, toilet)
+   * Lấy schema/cấu trúc thuộc tính của một loại POI
+   * 
+   * Endpoint: GET /admin/pois/schema?type={type}
+   * Auth: Yêu cầu Admin role
+   * 
+   * Schema giúp frontend biết:
+   * - POI này có những thuộc tính gì (name, address, phone, website, etc.)
+   * - Kiểu dữ liệu của từng thuộc tính (string, number, boolean)
+   * - Thuộc tính nào bắt buộc, thuộc tính nào optional
+   * 
+   * @param type Loại POI cần lấy schema
+   * @returns Object chứa schema definition của loại POI đó
    */
   @Get('pois/schema')
   async getPoiSchema(@Query('type') type: string) {
@@ -82,8 +116,19 @@ export class AdminController {
   }
 
   /**
-   * POST /admin/pois
-   * Tạo POI mới trong database
+   * Tạo POI (Point of Interest) mới trong hệ thống
+   * 
+   * Endpoint: POST /admin/pois
+   * Auth: Yêu cầu Admin role
+   * 
+   * Workflow:
+   * 1. Validate dữ liệu đầu vào (name, type, lat, lon)
+   * 2. Generate URI cho POI mới
+   * 3. Tạo RDF triples theo ontology của dự án
+   * 4. Insert vào Named Graph tương ứng trong Fuseki
+   * 
+   * @param createPoiDto DTO chứa thông tin POI cần tạo
+   * @returns Object chứa success flag, message và data POI vừa tạo
    */
   @Post('pois')
   async createPoi(@Body() createPoiDto: CreatePoiDto) {
@@ -107,13 +152,17 @@ export class AdminController {
   }
 
   /**
-   * GET /admin/pois
-   * Lấy danh sách POIs từ Named Graphs với filter
-   * Query params: 
-   *   - type: loại POI (school, bus-stop, hospital, etc. hoặc 'all')
-   *   - page: số trang (default 1)
-   *   - limit: số items per page (default 10, max 100)
-   *   - lightweight: true/false - chỉ lấy fields cần thiết cho map (default false)
+   * Lấy danh sách POI với phân trang và filter
+   * 
+   * Endpoint: GET /admin/pois?type={type}&page={page}&limit={limit}&lightweight={boolean}
+   * Auth: Yêu cầu Admin role
+   * 
+   * Cho phép:
+   * - Lọc theo loại POI cụ thể hoặc lấy tất cả ('all')
+   * - Phân trang để tránh load quá nhiều data
+   * - Lightweight mode: chỉ lấy fields cần thiết (id, name, lat, lon, type) cho hiển thị map
+   *
+   * @returns Object chứa success, totalCount, page info và mảng POI
    */
   @Get('pois')
   async getPois(
@@ -142,8 +191,21 @@ export class AdminController {
   }
 
   /**
-   * DELETE /admin/pois/:id
-   * Xóa POI khỏi database
+   * Xóa POI khỏi hệ thống
+   * 
+   * Endpoint: DELETE /admin/pois/:id
+   * Auth: Yêu cầu Admin role
+   * 
+   * Workflow:
+   * 1. Tìm POI theo ID trong tất cả Named Graphs
+   * 2. Xác định graph chứa POI đó
+   * 3. Thực thi SPARQL DELETE để xóa tất cả triples liên quan
+   * 4. Trả về kết quả xóa
+   * 
+   * Lưu ý: Thao tác này KHÔNG THỂ HOÀN TÁC
+   * 
+   * @param id URI hoặc ID của POI cần xóa
+   * @returns Object chứa success flag, message và data xác nhận
    */
   @Delete('pois/:id')
   async deletePoi(@Param('id') id: string) {
@@ -167,8 +229,15 @@ export class AdminController {
   }
 
   /**
-   * GET /admin/health
-   * Health check endpoint
+   * Health check endpoint để kiểm tra trạng thái Admin module
+   * 
+   * Endpoint: GET /admin/health
+   * Auth: Yêu cầu Admin role
+   * 
+   * Dùng cho:
+   * - Monitoring systems để kiểm tra service còn sống không
+   * 
+   * @returns Object chứa success flag, message và timestamp
    */
   @Get('health')
   async healthCheck() {
@@ -179,31 +248,5 @@ export class AdminController {
     };
   }
 
-  /**
-   * GET /admin/iot/traffic
-   * DEPRECATED - IoT simulation không còn được sử dụng
-   */
-  @Get('iot/traffic')
-  async getTrafficData() {
-    return {
-      success: false,
-      message: 'IoT simulation has been disabled',
-      count: 0,
-      data: [],
-    };
-  }
 
-  /**
-   * GET /admin/iot/flood
-   * DEPRECATED - IoT simulation không còn được sử dụng
-   */
-  @Get('iot/flood')
-  async getFloodData() {
-    return {
-      success: false,
-      message: 'IoT simulation has been disabled',
-      count: 0,
-      data: [],
-    };
-  }
 }

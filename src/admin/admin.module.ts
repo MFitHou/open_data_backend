@@ -21,6 +21,27 @@ import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { AdminFusekiService } from './admin-fuseki.service';
 
+/**
+ * Admin Module - Module quản lý tất cả chức năng admin dashboard
+ * 
+ * Chức năng:
+ * - Quản lý POI (Point of Interest): tạo, xem, xóa địa điểm
+ * - Thống kê dashboard: tổng số POI, phân loại theo type, top categories
+ * - Lấy schema/cấu trúc của từng loại POI
+ * - Tương tác với Apache Jena Fuseki để lưu/đọc dữ liệu RDF
+ * 
+ * Components:
+ * - AdminController: Xử lý HTTP requests (GET, POST, DELETE)
+ * - AdminService: Business logic chính (CRUD operations, statistics)
+ * - AdminFusekiService: Xử lý SPARQL queries với Fuseki triplestore
+ * 
+ * Dependencies:
+ * - ConfigModule: Đọc environment variables (.env)
+ * - AdminGuard: Bảo vệ endpoints, yêu cầu role 'admin'
+ * 
+ * Exports:
+ * - AdminService: Để các module khác có thể sử dụng nếu cần
+ */
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true })],
   providers: [AdminService, AdminFusekiService],

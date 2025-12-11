@@ -21,6 +21,28 @@ import { AppModule } from './app.module';
 import session = require('express-session');
 import * as bodyParser from 'body-parser';
 
+/**
+ * Bootstrap function - Entry point của NestJS application
+ * 
+ * Khởi tạo và cấu hình:
+ * 1. NestJS application instance
+ * 2. Global API prefix (/api)
+ * 3. Validation pipe cho data validation tự động
+ * 4. Session middleware cho authentication
+ * 5. CORS configuration cho cross-origin requests
+ * 
+ * API Structure:
+ * - Base URL: http://localhost:3000/api
+ * - All endpoints được prefix với /api
+ * - VD: /api/fuseki/atms, /api/admin/stats, /api/auth/login
+ * 
+ * Environment Variables:
+ * - PORT: Port để chạy server (default: 3000)
+ * - SESSION_SECRET: Secret key cho session encryption
+ * - SESSION_MAX_AGE: Thời gian sống của session (default: 24h)
+ * - CORS_ORIGINS: Danh sách origins được phép (default: localhost:5173)
+ * - NODE_ENV: production/development
+ */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -33,13 +55,12 @@ async function bootstrap() {
   // Cấu hình validation pipe global
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Loại bỏ các property không có trong DTO
-      forbidNonWhitelisted: true, // Throw error nếu có property không hợp lệ
-      transform: true, // Tự động transform types
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // Cấu hình session middleware
   app.use(
     session({
       name: 'opendatafithou.sid',
@@ -47,7 +68,7 @@ async function bootstrap() {
       resave: false,
       saveUninitialized: false,
       cookie: {
-        maxAge: parseInt(process.env.SESSION_MAX_AGE || '86400000', 10), // 24 giờ
+        maxAge: parseInt(process.env.SESSION_MAX_AGE || '86400000', 10),
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
@@ -60,7 +81,7 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGINS || 'http://localhost:5173',
     methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type,Authorization',
-    credentials: true, // Quan trọng: cho phép gửi cookies
+    credentials: true,
     maxAge: 3600,
   });
 

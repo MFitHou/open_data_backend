@@ -16,18 +16,21 @@
  */
 
 import { Module } from '@nestjs/common';
-// import { TypeOrmModule } from '@nestjs/typeorm';
-import { UsersController } from './users.controller';
-import { UsersService } from './users.service';
-// import { User, UserContribution, AuditLog } from './entities';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { CrowdsourceController } from './crowdsource.controller';
+import { CrowdsourceService } from './crowdsource.service';
+import { CrowdsourceSparqlHelper } from './crowdsource-sparql.helper';
+import { UserContribution } from './entities/user-contribution.entity';
+import { ContributionVote } from './entities/contribution-vote.entity';
+
+/**
+ * Module quản lý crowdsource feature
+ */
 @Module({
-  imports: [
-    // TEMPORARY: TypeORM bị tắt
-    // TypeOrmModule.forFeature([User, UserContribution, AuditLog])
-  ],
-  controllers: [UsersController],
-  providers: [UsersService],
-  exports: [UsersService],
+  imports: [TypeOrmModule.forFeature([UserContribution, ContributionVote])],
+  controllers: [CrowdsourceController],
+  providers: [CrowdsourceService, CrowdsourceSparqlHelper],
+  exports: [CrowdsourceService],
 })
-export class UsersModule {}
+export class CrowdsourceModule {}
